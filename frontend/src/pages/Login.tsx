@@ -6,6 +6,12 @@ interface LoginProps {
   onSuccess: () => void;
 }
 
+interface ValidationErrors {
+  email?: string;
+  password?: string;
+  displayName?: string;
+}
+
 export default function Login({ onSuccess }: LoginProps) {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
@@ -13,19 +19,57 @@ export default function Login({ onSuccess }: LoginProps) {
   const [displayName, setDisplayName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<ValidationErrors>({});
+
+  function validateEmail(email: string): boolean {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  }
+
+  function validatePassword(password: string): boolean {
+    return password.length >= 6;
+  }
+
+  function validateForm(): boolean {
+    const errors: ValidationErrors = {};
+
+    if (!email.trim()) {
+      errors.email = 'Email обязателен';
+    } else if (!validateEmail(email)) {
+      errors.email = 'Введите корректный email';
+    }
+
+    if (!password) {
+      errors.password = 'Пароль обязателен';
+    } else if (!validatePassword(password)) {
+      errors.password = 'Пароль должен содержать минимум 6 символов';
+    }
+
+    if (isSignUp) {
+      if (!displayName.trim()) {
+        errors.displayName = 'Имя обязательно';
+      } else if (displayName.trim().length < 2) {
+        errors.displayName = 'Имя должно содержать минимум 2 символа';
+      }
+    }
+
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
+    setValidationErrors({});
+
+    if (!validateForm()) {
+      return;
+    }
+
     setLoading(true);
 
     try {
       if (isSignUp) {
-        if (!displayName) {
-          setError('Пожалуйста, введите имя');
-          setLoading(false);
-          return;
-        }
         await signUp(email, password, displayName);
       } else {
         await signIn(email, password);
@@ -77,11 +121,23 @@ export default function Login({ onSuccess }: LoginProps) {
                   <input
                     type="text"
                     value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
+                    onChange={(e) => {
+                      setDisplayName(e.target.value);
+                      if (validationErrors.displayName) {
+                        setValidationErrors((prev) => ({ ...prev, displayName: undefined }));
+                      }
+                    }}
                     placeholder="Ваше имя"
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition-all"
+                    className={`w-full bg-gray-800 border rounded-lg pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-1 transition-all ${
+                      validationErrors.displayName
+                        ? 'border-red-600 focus:border-red-600 focus:ring-red-600'
+                        : 'border-gray-700 focus:border-blue-600 focus:ring-blue-600'
+                    }`}
                   />
                 </div>
+                {validationErrors.displayName && (
+                  <p className="text-red-500 text-xs mt-1">{validationErrors.displayName}</p>
+                )}
               </div>
             )}
 
@@ -94,11 +150,23 @@ export default function Login({ onSuccess }: LoginProps) {
                 <input
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (validationErrors.email) {
+                      setValidationErrors((prev) => ({ ...prev, email: undefined }));
+                    }
+                  }}
                   placeholder="your@email.com"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition-all"
+                  className={`w-full bg-gray-800 border rounded-lg pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-1 transition-all ${
+                    validationErrors.email
+                      ? 'border-red-600 focus:border-red-600 focus:ring-red-600'
+                      : 'border-gray-700 focus:border-blue-600 focus:ring-blue-600'
+                  }`}
                 />
               </div>
+              {validationErrors.email && (
+                <p className="text-red-500 text-xs mt-1">{validationErrors.email}</p>
+              )}
             </div>
 
             <div>
@@ -110,11 +178,23 @@ export default function Login({ onSuccess }: LoginProps) {
                 <input
                   type="password"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (validationErrors.password) {
+                      setValidationErrors((prev) => ({ ...prev, password: undefined }));
+                    }
+                  }}
                   placeholder="••••••••"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition-all"
+                  className={`w-full bg-gray-800 border rounded-lg pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-1 transition-all ${
+                    validationErrors.password
+                      ? 'border-red-600 focus:border-red-600 focus:ring-red-600'
+                      : 'border-gray-700 focus:border-blue-600 focus:ring-blue-600'
+                  }`}
                 />
               </div>
+              {validationErrors.password && (
+                <p className="text-red-500 text-xs mt-1">{validationErrors.password}</p>
+              )}
             </div>
 
             <button
@@ -134,6 +214,7 @@ export default function Login({ onSuccess }: LoginProps) {
               onClick={() => {
                 setIsSignUp(!isSignUp);
                 setError('');
+                setValidationErrors({});
               }}
               className="text-blue-500 hover:text-blue-400 font-semibold transition-colors"
             >
