@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build artifacts
+dist/
+dist-ssr/
+build/
+*.tsbuildinfo
+
+# Env files
+.env
+.env.*
+!.env.example
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Editor directories
+.idea/
+.vscode/
+
+# OS files
+.DS_Store
+
+# Coverage / test output
+coverage/
+
+

@@ -9,7 +9,6 @@ export default function PortfolioPage() {
   const { user } = useAuth();
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [assets, setAssets] = useState<PortfolioAsset[]>([]);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function loadData() {
@@ -23,8 +22,6 @@ export default function PortfolioPage() {
         }
       } catch (error) {
         console.error('Error loading portfolio:', error);
-      } finally {
-        setLoading(false);
       }
     }
 

@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Mail, Lock, User as UserIcon, AlertCircle, Loader } from 'lucide-react';
 import { signIn, signUp } from '../lib/auth';
+import { useAuth } from '../components/AuthContext';
+import { isSupabaseConfigured } from '../lib/supabase';
 
 interface LoginProps {
   onSuccess: () => void;
@@ -20,6 +22,8 @@ export default function Login({ onSuccess }: LoginProps) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>({});
+  const { loginAsDemo } = useAuth();
+  const demoMode = !isSupabaseConfigured;
 
   function validateEmail(email: string): boolean {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -102,6 +106,12 @@ export default function Login({ onSuccess }: LoginProps) {
           <p className="text-gray-400 text-center text-sm mb-8">
             {isSignUp ? 'Создайте учетную запись' : 'Войдите в свой аккаунт'}
           </p>
+
+          {demoMode && (
+            <div className="bg-blue-600/10 border border-blue-600 rounded-lg p-4 mb-6 text-sm text-blue-200">
+              Запущен демо-режим без Supabase. Вы можете пропустить авторизацию и сразу посмотреть интерфейс.
+            </div>
+          )}
 
           {error && (
             <div className="bg-red-600/10 border border-red-600 rounded-lg p-4 mb-6 flex items-start gap-3">
@@ -205,6 +215,19 @@ export default function Login({ onSuccess }: LoginProps) {
               {loading && <Loader className="w-4 h-4 animate-spin" />}
               {isSignUp ? 'Создать аккаунт' : 'Войти'}
             </button>
+
+          {demoMode && (
+            <button
+              type="button"
+              onClick={() => {
+                loginAsDemo();
+                onSuccess();
+              }}
+              className="w-full mt-3 border border-gray-600 text-gray-200 hover:text-white hover:border-white rounded-lg py-3 transition-all"
+            >
+              Войти в демо-режиме
+            </button>
+          )}
           </form>
 
           <p className="text-center text-gray-400 text-sm mt-6">

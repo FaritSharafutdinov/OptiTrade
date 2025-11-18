@@ -1,5 +1,4 @@
 import { supabase } from './supabase';
-import { Portfolio, PortfolioAsset } from './supabase';
 
 export async function getPortfolio(userId: string) {
   const { data, error } = await supabase
