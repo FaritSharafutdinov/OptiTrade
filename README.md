@@ -84,6 +84,7 @@ Run every command from `frontend/`:
 - `npm run lint` – ESLint
 - `npm run typecheck` – isolated `tsc` run
 - `npm run format` / `npm run format:check` – Prettier write/check
+- `npm run test` / `npm run test:run` – Vitest + Testing Library suite (JSDOM)
 
 ## Documentation 📚
 

@@ -53,7 +53,8 @@ This document tracks everything we still want to polish. Items are grouped by ur
    - Следующий шаг — покрыть ключевые флоу (Portfolio, ProtectedRoute) и подумать про Playwright для E2E.
 
 10. **Code documentation**
-    - Sprinkle JSDoc on shared helpers, keep README snippets aligned with actual commands, annotate tricky logic.
+    - ✅ README и STRUCTURE описывают тесты/Vitest и новые каталоги, ключевые утилиты (StatCard, Dashboard helpers) получили JSDoc-комментарии.
+    - Следующий шаг — документировать новые API-адаптеры и сложные пользовательские хуки по мере появления.
 
 ## 🟢 UX & UI polish
 

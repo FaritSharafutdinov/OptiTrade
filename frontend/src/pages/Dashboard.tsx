@@ -12,16 +12,19 @@ const currencyFormatter = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 2,
 });
 
+/** Format currency values in USD */
 function formatCurrency(value?: number | null) {
   if (typeof value !== 'number') return '—';
   return currencyFormatter.format(value);
 }
 
+/** Convert ISO timestamp to localized string */
 function formatTimestamp(timestamp?: string) {
   if (!timestamp) return '—';
   return new Date(timestamp).toLocaleString('ru-RU', { hour12: false });
 }
 
+/** Color helper for trade action badge */
 function tradeColor(action: string) {
   const normalized = action.toUpperCase();
   if (normalized === 'BUY') return 'text-green-400';

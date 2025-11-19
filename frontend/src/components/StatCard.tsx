@@ -2,12 +2,21 @@ import { memo } from 'react';
 import { LucideIcon } from 'lucide-react';
 import Skeleton from './Skeleton';
 
+/**
+ * Displays a small summary card with value/description.
+ */
 interface StatCardProps {
+  /** Label displayed at the top of the card */
   title: string;
+  /** Main numeric/string value */
   value: string;
+  /** Secondary description */
   subtitle: string;
+  /** Icon rendered in the header */
   icon: LucideIcon;
+  /** Visual trend indicator */
   trend?: 'up' | 'down';
+  /** When true, shows skeleton loaders */
   isLoading?: boolean;
 }
 

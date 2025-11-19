@@ -46,6 +46,7 @@ Add future knowledge-base docs here (architecture decisions, release plans, trou
 - Use `lib/` for API adapters, domain logic, and Supabase helpers.  
 - Treat `types/` as the single source of truth for app-specific interfaces.  
 - When a feature grows (data fetching, hooks, tests), colocate it under `src/features/<name>/`.
+- UI/logic tests live next to components under `__tests__/` using Vitest + Testing Library.
 
 ## Environment variables
 
