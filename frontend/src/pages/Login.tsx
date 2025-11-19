@@ -1,4 +1,7 @@
 import { useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { Mail, Lock, User as UserIcon, AlertCircle, Loader } from 'lucide-react';
 import { signIn, signUp } from '../lib/auth';
 import { useAuth } from '../components/AuthContext';
@@ -8,87 +11,82 @@ interface LoginProps {
   onSuccess: () => void;
 }
 
-interface ValidationErrors {
-  email?: string;
-  password?: string;
-  displayName?: string;
-}
+const loginSchema = z
+  .object({
+    mode: z.enum(['signin', 'signup']),
+    email: z
+      .string({ required_error: 'Email обязателен' })
+      .min(1, 'Email обязателен')
+      .email('Введите корректный email'),
+    password: z
+      .string({ required_error: 'Пароль обязателен' })
+      .min(6, 'Пароль должен содержать минимум 6 символов'),
+    displayName: z.string().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.mode === 'signup') {
+      const value = data.displayName?.trim() ?? '';
+      if (!value) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Имя обязательно',
+          path: ['displayName'],
+        });
+      } else if (value.length < 2) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Имя должно содержать минимум 2 символа',
+          path: ['displayName'],
+        });
+      }
+    }
+  });
+
+type LoginFormValues = z.infer<typeof loginSchema>;
 
 export default function Login({ onSuccess }: LoginProps) {
-  const [isSignUp, setIsSignUp] = useState(false);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [displayName, setDisplayName] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [validationErrors, setValidationErrors] = useState<ValidationErrors>({});
+  const [serverError, setServerError] = useState('');
   const { loginAsDemo } = useAuth();
   const demoMode = !isSupabaseConfigured;
 
-  function validateEmail(email: string): boolean {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
-  }
+  const form = useForm<LoginFormValues>({
+    mode: 'onChange',
+    resolver: zodResolver(loginSchema),
+    defaultValues: {
+      mode: 'signin',
+      email: '',
+      password: '',
+      displayName: '',
+    },
+  });
 
-  function validatePassword(password: string): boolean {
-    return password.length >= 6;
-  }
+  const mode = form.watch('mode');
+  const isSignUp = mode === 'signup';
 
-  function validateForm(): boolean {
-    const errors: ValidationErrors = {};
-
-    if (!email.trim()) {
-      errors.email = 'Email обязателен';
-    } else if (!validateEmail(email)) {
-      errors.email = 'Введите корректный email';
+  const toggleMode = () => {
+    const nextMode = isSignUp ? 'signin' : 'signup';
+    form.setValue('mode', nextMode);
+    if (nextMode === 'signin') {
+      form.setValue('displayName', '');
     }
+    setServerError('');
+  };
 
-    if (!password) {
-      errors.password = 'Пароль обязателен';
-    } else if (!validatePassword(password)) {
-      errors.password = 'Пароль должен содержать минимум 6 символов';
-    }
-
-    if (isSignUp) {
-      if (!displayName.trim()) {
-        errors.displayName = 'Имя обязательно';
-      } else if (displayName.trim().length < 2) {
-        errors.displayName = 'Имя должно содержать минимум 2 символа';
-      }
-    }
-
-    setValidationErrors(errors);
-    return Object.keys(errors).length === 0;
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError('');
-    setValidationErrors({});
-
-    if (!validateForm()) {
-      return;
-    }
-
-    setLoading(true);
-
+  const onSubmit = async (values: LoginFormValues) => {
+    setServerError('');
     try {
-      if (isSignUp) {
-        await signUp(email, password, displayName);
+      if (values.mode === 'signup') {
+        await signUp(values.email, values.password, values.displayName?.trim() ?? '');
       } else {
-        await signIn(email, password);
+        await signIn(values.email, values.password);
       }
       onSuccess();
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'Ошибка при входе. Проверьте учетные данные.'
+      setServerError(
+        err instanceof Error ? err.message : 'Ошибка при входе. Проверьте учетные данные.'
       );
-    } finally {
-      setLoading(false);
     }
-  }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0a0f1e] via-[#141b2d] to-[#0a0f1e] flex items-center justify-center p-4">
@@ -100,9 +98,7 @@ export default function Login({ onSuccess }: LoginProps) {
             </div>
           </div>
 
-          <h1 className="text-3xl font-bold text-white text-center mb-2">
-            OptiTrade
-          </h1>
+          <h1 className="text-3xl font-bold text-white text-center mb-2">OptiTrade</h1>
           <p className="text-gray-400 text-center text-sm mb-8">
             {isSignUp ? 'Создайте учетную запись' : 'Войдите в свой аккаунт'}
           </p>
@@ -113,134 +109,104 @@ export default function Login({ onSuccess }: LoginProps) {
             </div>
           )}
 
-          {error && (
+          {serverError && (
             <div className="bg-red-600/10 border border-red-600 rounded-lg p-4 mb-6 flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-              <p className="text-red-500 text-sm">{error}</p>
+              <p className="text-red-500 text-sm">{serverError}</p>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <input type="hidden" {...form.register('mode')} />
+
             {isSignUp && (
               <div>
-                <label className="block text-gray-300 text-sm font-medium mb-2">
-                  Имя
-                </label>
+                <label className="block text-gray-300 text-sm font-medium mb-2">Имя</label>
                 <div className="relative">
                   <UserIcon className="absolute left-3 top-3 w-5 h-5 text-gray-500" />
                   <input
                     type="text"
-                    value={displayName}
-                    onChange={(e) => {
-                      setDisplayName(e.target.value);
-                      if (validationErrors.displayName) {
-                        setValidationErrors((prev) => ({ ...prev, displayName: undefined }));
-                      }
-                    }}
+                    {...form.register('displayName')}
                     placeholder="Ваше имя"
                     className={`w-full bg-gray-800 border rounded-lg pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-1 transition-all ${
-                      validationErrors.displayName
+                      form.formState.errors.displayName
                         ? 'border-red-600 focus:border-red-600 focus:ring-red-600'
                         : 'border-gray-700 focus:border-blue-600 focus:ring-blue-600'
                     }`}
                   />
                 </div>
-                {validationErrors.displayName && (
-                  <p className="text-red-500 text-xs mt-1">{validationErrors.displayName}</p>
+                {form.formState.errors.displayName && (
+                  <p className="text-red-500 text-xs mt-1">{form.formState.errors.displayName.message}</p>
                 )}
               </div>
             )}
 
             <div>
-              <label className="block text-gray-300 text-sm font-medium mb-2">
-                Email
-              </label>
+              <label className="block text-gray-300 text-sm font-medium mb-2">Email</label>
               <div className="relative">
                 <Mail className="absolute left-3 top-3 w-5 h-5 text-gray-500" />
                 <input
                   type="email"
-                  value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    if (validationErrors.email) {
-                      setValidationErrors((prev) => ({ ...prev, email: undefined }));
-                    }
-                  }}
+                  {...form.register('email')}
                   placeholder="your@email.com"
                   className={`w-full bg-gray-800 border rounded-lg pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-1 transition-all ${
-                    validationErrors.email
+                    form.formState.errors.email
                       ? 'border-red-600 focus:border-red-600 focus:ring-red-600'
                       : 'border-gray-700 focus:border-blue-600 focus:ring-blue-600'
                   }`}
                 />
               </div>
-              {validationErrors.email && (
-                <p className="text-red-500 text-xs mt-1">{validationErrors.email}</p>
+              {form.formState.errors.email && (
+                <p className="text-red-500 text-xs mt-1">{form.formState.errors.email.message}</p>
               )}
             </div>
 
             <div>
-              <label className="block text-gray-300 text-sm font-medium mb-2">
-                Пароль
-              </label>
+              <label className="block text-gray-300 text-sm font-medium mb-2">Пароль</label>
               <div className="relative">
                 <Lock className="absolute left-3 top-3 w-5 h-5 text-gray-500" />
                 <input
                   type="password"
-                  value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value);
-                    if (validationErrors.password) {
-                      setValidationErrors((prev) => ({ ...prev, password: undefined }));
-                    }
-                  }}
+                  {...form.register('password')}
                   placeholder="••••••••"
                   className={`w-full bg-gray-800 border rounded-lg pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-1 transition-all ${
-                    validationErrors.password
+                    form.formState.errors.password
                       ? 'border-red-600 focus:border-red-600 focus:ring-red-600'
                       : 'border-gray-700 focus:border-blue-600 focus:ring-blue-600'
                   }`}
                 />
               </div>
-              {validationErrors.password && (
-                <p className="text-red-500 text-xs mt-1">{validationErrors.password}</p>
+              {form.formState.errors.password && (
+                <p className="text-red-500 text-xs mt-1">{form.formState.errors.password.message}</p>
               )}
             </div>
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={form.formState.isSubmitting}
               className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-semibold py-3 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-6"
             >
-              {loading && <Loader className="w-4 h-4 animate-spin" />}
+              {form.formState.isSubmitting && <Loader className="w-4 h-4 animate-spin" />}
               {isSignUp ? 'Создать аккаунт' : 'Войти'}
             </button>
 
-          {demoMode && (
-            <button
-              type="button"
-              onClick={() => {
-                loginAsDemo();
-                onSuccess();
-              }}
-              className="w-full mt-3 border border-gray-600 text-gray-200 hover:text-white hover:border-white rounded-lg py-3 transition-all"
-            >
-              Войти в демо-режиме
-            </button>
-          )}
+            {demoMode && (
+              <button
+                type="button"
+                onClick={() => {
+                  loginAsDemo();
+                  onSuccess();
+                }}
+                className="w-full mt-3 border border-gray-600 text-gray-200 hover:text-white hover:border-white rounded-lg py-3 transition-all"
+              >
+                Войти в демо-режиме
+              </button>
+            )}
           </form>
 
           <p className="text-center text-gray-400 text-sm mt-6">
             {isSignUp ? 'Уже есть аккаунт?' : 'Нет аккаунта?'}{' '}
-            <button
-              type="button"
-              onClick={() => {
-                setIsSignUp(!isSignUp);
-                setError('');
-                setValidationErrors({});
-              }}
-              className="text-blue-500 hover:text-blue-400 font-semibold transition-colors"
-            >
+            <button type="button" onClick={toggleMode} className="text-blue-500 hover:text-blue-400 font-semibold transition-colors">
               {isSignUp ? 'Войдите' : 'Зарегистрируйтесь'}
             </button>
           </p>
