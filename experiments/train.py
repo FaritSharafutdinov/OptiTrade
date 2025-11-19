@@ -1,177 +1,153 @@
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.distributions import Normal
 import pandas as pd
 from envs.trading_env import EnhancedTradingEnv
-from stable_baselines3 import PPO
-from stable_baselines3.common.callbacks import BaseCallback
-from stable_baselines3.common.monitor import Monitor
 import matplotlib.pyplot as plt
-import numpy as np
 
-class MetricsCallback(BaseCallback):
-    def __init__(self, verbose=0):
-        super().__init__(verbose)
-        self.episode_returns = []
-        
-    def _on_step(self) -> bool:
-        return True
-    
-    def _on_rollout_end(self) -> None:
-        if len(self.model.ep_info_buffer) > 0:
-            for episode in self.model.ep_info_buffer:
-                if 'total_return_pct' in episode:
-                    self.logger.record('metrics/total_return_pct', episode['total_return_pct'])
-                if 'max_drawdown' in episode:
-                    self.logger.record('metrics/max_drawdown', episode['max_drawdown'])
-                if 'total_trades' in episode:
-                    self.logger.record('metrics/total_trades', episode['total_trades'])
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print("Using:", device)
 
+# ----------------- Actor-Critic -----------------
+class ActorCritic(nn.Module):
+    def __init__(self, input_dim, hidden_dim=256, action_dim=2):
+        super().__init__()
+        self.shared = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU()
+        )
+        self.actor_mean = nn.Linear(hidden_dim, action_dim)
+        self.actor_logstd = nn.Parameter(torch.zeros(action_dim))
+        self.critic = nn.Linear(hidden_dim, 1)
 
-def train_model():
-    """Обучение модели"""
-    df = pd.read_csv("BTC_USDT_OI_FEATURES_1h_2Y.csv", parse_dates=['timestamp'], index_col='timestamp')
-    
-    df = df.sort_index()
-    
-    split_date = df.index[int(len(df) * 0.80)]
-    train_df = df[df.index < split_date]
-    val_df = df[df.index >= split_date]
+    def forward(self, x):
+        x = self.shared(x)
+        mean = self.actor_mean(x)
+        std = self.actor_logstd.exp().expand_as(mean)
+        value = self.critic(x)
+        return mean, std, value
 
-    print(f"Данные: Train={len(train_df)}, Validation={len(val_df)}")
-    
+# ----------------- Utilities -----------------
+def flatten_state(state):
+    return torch.FloatTensor(state.flatten()).unsqueeze(0).to(device)
 
-    train_env = Monitor(EnhancedTradingEnv(
-        train_df, 
-        window_size=50,
-        use_technical_features=True,
-        normalize=True
-    ))
-    
-    val_env = Monitor(EnhancedTradingEnv(
-        val_df,
-        window_size=50, 
-        use_technical_features=True,
-        normalize=True
-    ))
-    
-    model = PPO(
-        "MlpPolicy",
-        train_env,
-        learning_rate=1e-5,
-        n_steps=2048,
-        batch_size=128,
-        n_epochs=10,
-        gamma=0.99,
-        gae_lambda=0.95,
-        clip_range=0.2,
-        ent_coef=0.02,
-        vf_coef=0.5,
-        max_grad_norm=0.5,
-        policy_kwargs=dict(
-            net_arch=dict(pi=[256, 256], vf=[256, 256])
-        ),
-        verbose=1,
-        # tensorboard_log="./trading_tb/", 
-        device='auto'
-    )
-    
- 
-    metrics_callback = MetricsCallback()
-    
-    model.learn(
-        total_timesteps=200000,
-        callback=metrics_callback, 
-        progress_bar=True,
-        # tb_log_name="PPO_enhanced"  
-    )
-    
-    model.save("enhanced_trading_model")
-    return model, train_env, val_env
+# ----------------- Training -----------------
+def a2c_train(env, model, n_episodes=2000, gamma=0.99, lr=3e-4):
+    optimizer = optim.Adam(model.parameters(), lr=lr)
 
-def backtest_model_varied(model, env, num_episodes=5):
-    """Тестирование модели"""
-    print(f"Тестирование на {num_episodes} эпизодах с разными условиями...")
-    
-    all_equities = []
-    all_returns = []
-    all_positions = []
-    
-    for episode in range(num_episodes):
-      
-        start_offset = np.random.randint(0, 1000)  
-        env.unwrapped.step_idx = env.unwrapped.window_size + start_offset
-        
-        obs, _ = env.reset()
-        equities = []
-        positions = []
-        actions_log = []
-        
+    episode_rewards, actor_losses, critic_losses = [], [], []
+
+    for ep in range(n_episodes):
+        state, _ = env.reset()
+        state = flatten_state(state)
         done = False
-        step_count = 0
-        max_steps = 2000  
-        
-        while not done and step_count < max_steps:
+        ep_reward = 0
 
-        
-            action, _ = model.predict(obs, deterministic=True)  
-          
-            obs, reward, done, _, info = env.step(action)
-            
-            equities.append(info['equity'])
-            positions.append(info['position'])
-            actions_log.append(action)
-            step_count += 1
-        
+        log_probs, values, rewards = [], [], []
 
-        final_return = (equities[-1] - equities[0]) / equities[0] * 100
-        all_returns.append(final_return)
-        all_equities.append(equities)
-        all_positions.append(positions)
-        
-    
-        unique_actions = len(set([tuple(a) for a in actions_log]))
-        avg_position = np.mean(positions)
-        
-        print(f"Эпизод {episode+1}:")
-        print(f"  Return: {final_return:.2f}%")
-        print(f"  Max Drawdown: {info['max_drawdown']:.2%}")
-        print(f"  Trades: {info['total_trades']}")
-        print(f"  Шагов: {len(equities)}")
-        print(f"  Уникальных действий: {unique_actions}")
-        print(f"  Средняя позиция: {avg_position:.3f}")
-        print(f"  Начальное смещение: +{start_offset} шагов")
-        print()
-        
-    avg_return = np.mean(all_returns)
-    win_rate = np.mean([1 if ret > 0 else 0 for ret in all_returns]) * 100
-    std_return = np.std(all_returns)
-    
-    print(f"\nИтоги теста:")
-    print(f"Средняя доходность: {avg_return:.2f}%")
-    print(f"Стандартное отклонение: {std_return:.2f}%")
-    print(f"Win Rate: {win_rate:.1f}%")
-    print(f"Диапазон доходностей: {min(all_returns):.2f}% - {max(all_returns):.2f}%")
-    print(f"Количество эпизодов: {num_episodes}")
-    
-    # Визуализация
-    plot_result(all_equities, all_returns)
-    
-    return all_returns, all_equities
+        while not done:
+            mean, std, value = model(state)
+            dist = Normal(mean, std)
+            action = dist.sample()
+            log_prob = dist.log_prob(action).sum(dim=-1)
 
-def plot_result(all_equities, all_returns):
-    """Один график с кривыми эквити"""
-    plt.figure(figsize=(15, 8))
-    
-    for i, equities in enumerate(all_equities):
-        plt.plot(equities, label=f'Эпизод {i+1} ({all_returns[i]:.1f}%)', alpha=0.7, linewidth=2)
-    
-    plt.title('Кривые капитала', fontsize=16, fontweight='bold')
-    plt.ylabel('Капитал ($)', fontsize=12)
-    plt.xlabel('Шаг', fontsize=12)
-    plt.legend(fontsize=10)
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.show()
+            # action to numpy on CPU
+            next_state, reward, done, _, _ = env.step(action.detach().cpu().numpy()[0])
+            next_state = flatten_state(next_state)
+
+            log_probs.append(log_prob)
+            values.append(value)
+            rewards.append(torch.tensor([reward], dtype=torch.float32, device=device))
+
+            state = next_state
+            ep_reward += reward
+
+        # Compute returns and advantages
+        returns = []
+        R = torch.zeros(1, device=device)
+        for r in reversed(rewards):
+            R = r + gamma * R
+            returns.insert(0, R)
+
+        returns = torch.stack(returns).squeeze()
+        values = torch.stack(values).squeeze()
+        log_probs = torch.stack(log_probs)
+        advantages = returns - values
+
+        actor_loss = -(log_probs * advantages.detach()).mean()
+        critic_loss = advantages.pow(2).mean()
+        loss = actor_loss + 0.5 * critic_loss
+
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        episode_rewards.append(ep_reward)
+        actor_losses.append(actor_loss.item())
+        critic_losses.append(critic_loss.item())
+
+        if ep % 10 == 0:
+            print(f"Episode {ep}, Total Reward: {ep_reward:.2f}")
+
+    return episode_rewards, actor_losses, critic_losses
+
+# ----------------- Data -----------------
+df = pd.read_csv("BTC_USDT_OI_SP500_FEATURES_1h_2Y.csv", parse_dates=['timestamp'], index_col='timestamp')
+df = df.sort_index()
+df.fillna(method='ffill', inplace=True)
+df.fillna(0, inplace=True)
+
+# Фичи для обучения, исключая 'Close'
+features = [c for c in df.columns if c != 'Close' and c != 'timestamp']
 
 
-if __name__ == "__main__":
-    model, train_env, val_env = train_model()
-    returns, equities = backtest_model_varied(model, val_env, num_episodes=1)
+# Нормализация
+from sklearn.preprocessing import StandardScaler
+scaler = StandardScaler()
+df[features] = scaler.fit_transform(df[features])
+
+# ----------------- Environment -----------------
+
+env = EnhancedTradingEnv(
+    df,
+    window_size=50,
+    fee=0.001,
+    initial_balance=10000.0,
+    state_features=features,
+    normalize=False
+)
+
+
+state_dim = env.observation_space.shape[0] * env.observation_space.shape[1]
+model = ActorCritic(input_dim=state_dim, hidden_dim=256, action_dim=2).to(device)
+
+# ----------------- Train -----------------
+rewards, actor_losses, critic_losses = a2c_train(env, model, n_episodes=500)
+
+# ----------------- Save -----------------
+torch.save(model.state_dict(), 'experiments/trained_model.pth')
+print("Model saved to experiments/trained_model.pth")
+
+# ----------------- Plot -----------------
+plt.figure(figsize=(15, 5))
+plt.subplot(1, 3, 1)
+plt.plot(rewards)
+plt.title('Episode Rewards')
+plt.xlabel('Episode')
+plt.ylabel('Reward')
+plt.subplot(1, 3, 2)
+plt.plot(actor_losses)
+plt.title('Actor Losses')
+plt.xlabel('Episode')
+plt.ylabel('Loss')
+plt.subplot(1, 3, 3)
+plt.plot(critic_losses)
+plt.title('Critic Losses')
+plt.xlabel('Episode')
+plt.ylabel('Loss')
+plt.tight_layout()
+plt.savefig('experiments/learning_curves.png')
+print("Learning curves saved to experiments/learning_curves.png")
