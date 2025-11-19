@@ -44,11 +44,13 @@ This document tracks everything we still want to polish. Items are grouped by ur
 
 8. **Accessibility**
 
-   - Provide ARIA labels, focus management, keyboard navigation, and screen-reader friendly alerts.
+   - ✅ Sidebar получил `role="navigation"` + `aria-label`, иконки помечены `aria-hidden`, добавлен skip-link и видимые `focus-visible` индикаторы на ссылках/кнопках Login — клавиатурная навигация стала заметной.
+   - Следующий шаг — пройтись по остальным формам (Settings и т.д.), добавить ARIA для таблиц и подсказки screen reader’ам на кнопках действий.
 
 9. **Testing**
 
-   - Standing goal: Vitest for units, React Testing Library for components, Playwright for E2E critical flows (auth, portfolio, trades).
+   - ✅ Настроен Vitest + Testing Library + JSDOM, добавлены примеры тестов (`StatCard`, `Login`).
+   - Следующий шаг — покрыть ключевые флоу (Portfolio, ProtectedRoute) и подумать про Playwright для E2E.
 
 10. **Code documentation**
     - Sprinkle JSDoc on shared helpers, keep README snippets aligned with actual commands, annotate tricky logic.

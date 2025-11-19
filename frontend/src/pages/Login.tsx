@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -6,10 +7,6 @@ import { Mail, Lock, User as UserIcon, AlertCircle, Loader } from 'lucide-react'
 import { signIn, signUp } from '../lib/auth';
 import { useAuth } from '../components/AuthContext';
 import { isSupabaseConfigured } from '../lib/supabase';
-
-interface LoginProps {
-  onSuccess: () => void;
-}
 
 const loginSchema = z
   .object({
@@ -44,7 +41,8 @@ const loginSchema = z
 
 type LoginFormValues = z.infer<typeof loginSchema>;
 
-export default function Login({ onSuccess }: LoginProps) {
+export default function Login() {
+  const navigate = useNavigate();
   const [serverError, setServerError] = useState('');
   const { loginAsDemo } = useAuth();
   const demoMode = !isSupabaseConfigured;
@@ -80,7 +78,7 @@ export default function Login({ onSuccess }: LoginProps) {
       } else {
         await signIn(values.email, values.password);
       }
-      onSuccess();
+      navigate('/dashboard', { replace: true });
     } catch (err) {
       setServerError(
         err instanceof Error ? err.message : 'Ошибка при входе. Проверьте учетные данные.'
@@ -110,7 +108,7 @@ export default function Login({ onSuccess }: LoginProps) {
           )}
 
           {serverError && (
-            <div className="bg-red-600/10 border border-red-600 rounded-lg p-4 mb-6 flex items-start gap-3">
+            <div className="bg-red-600/10 border border-red-600 rounded-lg p-4 mb-6 flex items-start gap-3" role="alert" aria-live="assertive">
               <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
               <p className="text-red-500 text-sm">{serverError}</p>
             </div>
@@ -133,10 +131,14 @@ export default function Login({ onSuccess }: LoginProps) {
                         ? 'border-red-600 focus:border-red-600 focus:ring-red-600'
                         : 'border-gray-700 focus:border-blue-600 focus:ring-blue-600'
                     }`}
+                    aria-invalid={!!form.formState.errors.displayName}
+                    aria-describedby={form.formState.errors.displayName ? 'displayName-error' : undefined}
                   />
                 </div>
                 {form.formState.errors.displayName && (
-                  <p className="text-red-500 text-xs mt-1">{form.formState.errors.displayName.message}</p>
+                  <p className="text-red-500 text-xs mt-1" id="displayName-error">
+                    {form.formState.errors.displayName.message}
+                  </p>
                 )}
               </div>
             )}
@@ -154,10 +156,14 @@ export default function Login({ onSuccess }: LoginProps) {
                       ? 'border-red-600 focus:border-red-600 focus:ring-red-600'
                       : 'border-gray-700 focus:border-blue-600 focus:ring-blue-600'
                   }`}
+                  aria-invalid={!!form.formState.errors.email}
+                  aria-describedby={form.formState.errors.email ? 'email-error' : undefined}
                 />
               </div>
               {form.formState.errors.email && (
-                <p className="text-red-500 text-xs mt-1">{form.formState.errors.email.message}</p>
+                <p className="text-red-500 text-xs mt-1" id="email-error">
+                  {form.formState.errors.email.message}
+                </p>
               )}
             </div>
 
@@ -174,17 +180,21 @@ export default function Login({ onSuccess }: LoginProps) {
                       ? 'border-red-600 focus:border-red-600 focus:ring-red-600'
                       : 'border-gray-700 focus:border-blue-600 focus:ring-blue-600'
                   }`}
+                  aria-invalid={!!form.formState.errors.password}
+                  aria-describedby={form.formState.errors.password ? 'password-error' : undefined}
                 />
               </div>
               {form.formState.errors.password && (
-                <p className="text-red-500 text-xs mt-1">{form.formState.errors.password.message}</p>
+                <p className="text-red-500 text-xs mt-1" id="password-error">
+                  {form.formState.errors.password.message}
+                </p>
               )}
             </div>
 
             <button
               type="submit"
               disabled={form.formState.isSubmitting}
-              className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-semibold py-3 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-6"
+              className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-semibold py-3 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-6 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"
             >
               {form.formState.isSubmitting && <Loader className="w-4 h-4 animate-spin" />}
               {isSignUp ? 'Создать аккаунт' : 'Войти'}
@@ -195,9 +205,9 @@ export default function Login({ onSuccess }: LoginProps) {
                 type="button"
                 onClick={() => {
                   loginAsDemo();
-                  onSuccess();
+                  navigate('/dashboard', { replace: true });
                 }}
-                className="w-full mt-3 border border-gray-600 text-gray-200 hover:text-white hover:border-white rounded-lg py-3 transition-all"
+                className="w-full mt-3 border border-gray-600 text-gray-200 hover:text-white hover:border-white rounded-lg py-3 transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-200"
               >
                 Войти в демо-режиме
               </button>
@@ -206,7 +216,11 @@ export default function Login({ onSuccess }: LoginProps) {
 
           <p className="text-center text-gray-400 text-sm mt-6">
             {isSignUp ? 'Уже есть аккаунт?' : 'Нет аккаунта?'}{' '}
-            <button type="button" onClick={toggleMode} className="text-blue-500 hover:text-blue-400 font-semibold transition-colors">
+            <button
+              type="button"
+              onClick={toggleMode}
+              className="text-blue-500 hover:text-blue-400 font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400 rounded"
+            >
               {isSignUp ? 'Войдите' : 'Зарегистрируйтесь'}
             </button>
           </p>
