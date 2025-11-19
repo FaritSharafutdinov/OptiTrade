@@ -34,8 +34,8 @@ This document tracks everything we still want to polish. Items are grouped by ur
 
 6. **State management**
 
-   - Evaluate Zustand or Context-based stores for cross-page data (portfolio, alerts).
-   - Cache Supabase responses, add optimistic UI where safe.
+   - ✅ Добавлен Zustand store (`src/state/dashboardStore.ts`) для bot status + trades; React Query синхронизирует данные в хранилище.
+   - Следующий шаг — вынести в store остальные сущности (портфель, уведомления) и подумать об optimistic updates.
 
 7. **Performance**
 
@@ -115,22 +115,22 @@ This document tracks everything we still want to polish. Items are grouped by ur
 
 ```json
 {
-  "dependencies": {
-    "@tanstack/react-query": "^5.x",
-    "react-hook-form": "^7.x",
-    "zod": "^3.x",
-    "recharts": "^2.x",
-    "framer-motion": "^10.x",
-    "react-hot-toast": "^2.x",
-    "zustand": "^4.x"
-  },
-  "devDependencies": {
-    "prettier": "^3.x",
-    "@types/node": "^20.x",
-    "vitest": "^1.x",
-    "@testing-library/react": "^14.x",
-    "@testing-library/jest-dom": "^6.x"
-  }
+	"dependencies": {
+		"@tanstack/react-query": "^5.x",
+		"react-hook-form": "^7.x",
+		"zod": "^3.x",
+		"recharts": "^2.x",
+		"framer-motion": "^10.x",
+		"react-hot-toast": "^2.x",
+		"zustand": "^4.x"
+	},
+	"devDependencies": {
+		"prettier": "^3.x",
+		"@types/node": "^20.x",
+		"vitest": "^1.x",
+		"@testing-library/react": "^14.x",
+		"@testing-library/jest-dom": "^6.x"
+	}
 }
 ```
 

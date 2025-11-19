@@ -4,6 +4,7 @@ import StatCard from '../components/StatCard';
 import Skeleton from '../components/Skeleton';
 import { useBotStatus, useRecentTrades } from '../lib/queries';
 import type { TradeRecord } from '../lib/api';
+import { useDashboardStore } from '../state/dashboardStore';
 
 const currencyFormatter = new Intl.NumberFormat('en-US', {
   style: 'currency',
@@ -29,8 +30,10 @@ function tradeColor(action: string) {
 }
 
 export default function Dashboard() {
-  const { data: botStatus, isLoading: botLoading } = useBotStatus();
-  const { data: recentTrades, isLoading: tradesLoading } = useRecentTrades(5);
+  const { data: botStatusQuery, isLoading: botLoading } = useBotStatus();
+  const { data: recentTradesQuery, isLoading: tradesLoading } = useRecentTrades(5);
+  const botStatus = useDashboardStore((state) => state.botStatus) ?? botStatusQuery ?? null;
+  const tradesFromStore = useDashboardStore((state) => state.trades);
 
   const baseNotifications = useMemo(
     () => [
@@ -75,7 +78,7 @@ export default function Dashboard() {
     return baseNotifications;
   }, [baseNotifications, botStatus?.last_action]);
 
-  const trades: TradeRecord[] = recentTrades ?? [];
+  const trades: TradeRecord[] = tradesFromStore.length ? tradesFromStore : recentTradesQuery ?? [];
 
   return (
     <div className="flex-1 bg-[#0a0f1e] p-8 overflow-auto">
