@@ -42,14 +42,14 @@ export class ErrorBoundary extends Component<Props, State> {
             <div className="w-16 h-16 bg-red-600/10 rounded-full flex items-center justify-center mx-auto mb-4">
               <AlertTriangle className="w-8 h-8 text-red-500" />
             </div>
-            <h1 className="text-2xl font-bold text-white mb-2">Что-то пошло не так</h1>
+            <h1 className="text-2xl font-bold text-white mb-2">Something went wrong</h1>
             <p className="text-gray-400 mb-6">
-              Произошла непредвиденная ошибка. Пожалуйста, попробуйте обновить страницу.
+              An unexpected error occurred. Please try refreshing the page.
             </p>
             {this.state.error && (
               <details className="mb-6 text-left">
                 <summary className="text-gray-400 text-sm cursor-pointer mb-2">
-                  Детали ошибки
+                  Error details
                 </summary>
                 <pre className="bg-gray-900 p-4 rounded-lg text-xs text-red-400 overflow-auto">
                   {this.state.error.toString()}
@@ -61,7 +61,7 @@ export class ErrorBoundary extends Component<Props, State> {
               className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition-colors flex items-center justify-center gap-2"
             >
               <RefreshCw className="w-4 h-4" />
-              Обновить страницу
+              Refresh Page
             </button>
           </div>
         </div>

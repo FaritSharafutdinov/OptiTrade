@@ -66,15 +66,20 @@ This document tracks everything we still want to polish. Items are grouped by ur
 
 12. **Charts**
 
-    - Replace placeholders with Recharts (or Chart.js) for balance, P&L, and per-asset graphs, including tooltips and timeframe toggles.
+    - ✅ Dashboard показывает Recharts (AreaChart + BarChart) вместо заглушек, с тултипами и градиентами.
+    - Следующий шаг — подключить реальные данные и добавить свитчеры периодов.
 
 13. **Animations**
 
-    - Use Framer Motion for subtle page transitions, panel reveals, and animated skeletons.
+    - ✅ Framer Motion теперь управляет `PageTransition`, route-level `AnimatePresence`, hover-эффектами StatCard и графиков, а уведомления плавно появляются/реагируют на наведение.
+    - ✅ Skeleton'ы получили shimmer-анимацию с `prefers-reduced-motion` fallback, StatCard/Dashboard читают системные настройки и отключают лишние эффекты.
+    - Следующий шаг — связать тему (см. п.14) с анимациями: цветовые токены, динамическая подсветка и согласованный motion-duration.
 
 14. **Theming**
 
-    - Support light/dark mode with persisted preference and smooth transitions.
+    - ✅ Добавлен ThemeProvider + ThemeToggle: переключение хранится в `localStorage`, применяет `dark` класс и `data-theme` на `documentElement`.
+    - ✅ Все страницы получили светлую цветовую схему с `dark:`-вариантами, уведомления/карточки/формы читаются и в светлой, и в тёмной теме.
+    - Следующий шаг — вынести цветовые токены в Tailwind `extend.colors` и синхронизировать их с будущей брендовой палитрой.
 
 15. **Responsive design**
 

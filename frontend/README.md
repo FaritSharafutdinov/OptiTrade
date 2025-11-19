@@ -27,39 +27,11 @@ cp .env.example .env   # or create manually
 npm run dev -- --host
 ```
 
-Open the printed URL (defaults to `http://localhost:5173/`). If Supabase credentials are missing, the app automatically falls back to a demo mode so you can click through the UI.
+Open the printed URL (defaults to `http://localhost:5173/`). If Supabase credentials are missing, the app automatically falls back to a demo mode so you can click through the UI. Use the sidebar theme toggle to switch between light/dark palettes—your preference is persisted per browser.
 
 ### Backend + model service
 
-Python 3.9+ and PostgreSQL are required. From the repo root:
-
-**1. Setup PostgreSQL database:**
-
-```bash
-# Install PostgreSQL (if not installed)
-# macOS - automated:
-./scripts/install_postgresql.sh
-
-# macOS - manual:
-brew install postgresql@15
-brew services start postgresql@15
-
-# Ubuntu/Debian:
-sudo apt-get install postgresql postgresql-contrib
-sudo systemctl start postgresql
-
-# Create database and user (after PostgreSQL is installed and running)
-./scripts/setup_db.sh
-
-# Or manually:
-psql postgres
-CREATE DATABASE optitrade;
-CREATE USER optitrade WITH PASSWORD 'optitrade';
-GRANT ALL PRIVILEGES ON DATABASE optitrade TO optitrade;
-\q
-```
-
-**2. Install dependencies and run services:**
+Python 3.9+ is required. From the repo root:
 
 ```bash
 python -m venv .venv
@@ -74,13 +46,11 @@ uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 - `http://127.0.0.1:8000/health` — backend health check
-- `http://127.0.0.1:8000/bot/status` — bot status from database
+- `http://127.0.0.1:8000/bot/status` — in-memory bot status (demo)
 - `http://127.0.0.1:8000/model/predict` — backend proxy to the model service
-- `http://127.0.0.1:8001/predict` — direct model endpoint
+- `http://127.0.0.1:8001/predict` — direct model endpoint (FastAPI demo policy)
 
-The backend automatically creates all tables on first run. All data is persisted in PostgreSQL.
-
-**Note:** If PostgreSQL is not set up, the backend will show a warning but still start. Tables will be created automatically when the database becomes available.
+The backend talks to the model service via `MODEL_SERVICE_URL` (defaults to `http://127.0.0.1:8001`), persists bot configs/trades/backtests in SQLite, and exposes admin endpoints under `/bot/*`.
 
 ## Environment variables 🔐
 
@@ -90,59 +60,18 @@ Frontend:
 VITE_SUPABASE_URL=
 VITE_SUPABASE_ANON_KEY=
 VITE_API_BASE_URL=http://127.0.0.1:8000
+VITE_ADMIN_API_KEY=devkey
 ```
+
+> **Note:** `VITE_ADMIN_API_KEY` is used for bot control endpoints (start/stop/update-config). Defaults to `devkey` for development.
 
 Backend (loaded via `.env` or host environment):
 
-```bash
-# Copy example file
-cp .env.example .env
-
-# Edit .env with your settings:
+```
 ADMIN_API_KEY=devkey
 MODEL_SERVICE_URL=http://127.0.0.1:8001
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/optitrade
+DATABASE_URL=sqlite:///./agent.db
 ```
-
-**Default PostgreSQL connection:**
-
-- User: `postgres`
-- Password: `postgres`
-- Database: `optitrade`
-- Host: `localhost:5432`
-
-### Database Setup
-
-**Local PostgreSQL:**
-
-1. Install PostgreSQL (if not already installed):
-
-   ```bash
-   # macOS
-   brew install postgresql@15
-   brew services start postgresql@15
-
-   # Ubuntu/Debian
-   sudo apt-get install postgresql postgresql-contrib
-   sudo systemctl start postgresql
-   ```
-
-2. Create database and user:
-
-   ```bash
-   # Connect to PostgreSQL
-   psql postgres
-
-   # Create database and user
-   CREATE DATABASE optitrade;
-   CREATE USER optitrade WITH PASSWORD 'optitrade';
-   GRANT ALL PRIVILEGES ON DATABASE optitrade TO optitrade;
-   \q
-   ```
-
-3. The application will automatically create tables on first run.
-
-**For production**, update `DATABASE_URL` in your environment to point to your cloud PostgreSQL instance (e.g., AWS RDS, Supabase, Neon, etc.).
 
 Copy `frontend/.env.example`, paste your Supabase values, and keep `.env` local (Git already ignores it).
 
@@ -166,4 +95,4 @@ Run every command from `frontend/`:
 - `docs/IMPROVEMENTS.md` – prioritized backlog with recommended libraries
 - `docs/WORK_REPORT.md` – log of completed tasks and owners
 
-# Keep these docs current whenever you add subsystems or change workflows—the next teammate will thank you.
+Keep these docs current whenever you add subsystems or change workflows—the next teammate will thank you.

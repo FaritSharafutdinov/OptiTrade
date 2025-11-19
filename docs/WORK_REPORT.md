@@ -1,5 +1,31 @@
 # OptiTrade Frontend · Work Report
 
+## Snapshot · November 2025
+
+### 1. Charting overhaul
+
+- Dashboard теперь использует `recharts`: AreaChart для баланса + BarChart для P&L, с градиентами, тултипами и skeleton fallback.
+- Результат: данные визуализированы даже в оффлайн-режиме, и раздел "Charts" из `IMPROVEMENTS.md` закрыт.
+
+### 2. Motion system
+
+- Подключён `framer-motion`: `PageTransition` + `AnimatePresence` дают плавные переходы между роутами, а карточки/графики реагируют на hover и появление.
+- Добавлены интерактивные уведомления и анимация кнопок на Login, что делает UI отзывчивым без излишней вычурности.
+- Skeleton'ы получили shimmer и fallback при `prefers-reduced-motion`; StatCard/Dashboard отключают анимации, если система просит уменьшить движения.
+
+### 3. Theme toggle
+
+- Появился `ThemeProvider` + `ThemeToggle` (в сайдбаре): выбор темы хранится в `localStorage`, навешивает `dark`-класс и синхронизирует toasts.
+- Все страницы (Login, Dashboard, Portfolio и т.д.) получили светлую палитру через `dark:`-варианты, формы и таблицы читаются в обеих темах.
+- Статусы/уведомления и skeleton'ы адаптируются, так что даже мок-данные выглядят органично без пересвета.
+
+### 3. Documentation updates
+
+- Обновлён `IMPROVEMENTS.md` (пункты 12–13) и README-ссылки, чтобы команда сразу видела новые зависимости и UX-поведение.
+- TODO: перенести shimmer-анимации skeleton'ов и учесть `prefers-reduced-motion`.
+
+---
+
 ## Snapshot · January 2025
 
 This log captures the work completed on the OptiTrade frontend during January 2025. The focus was on laying down resilient infrastructure so future feature teams can iterate quickly.

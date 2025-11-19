@@ -1,140 +1,215 @@
-import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { DollarSign, TrendingUp, TrendingDown, PieChart, RefreshCw } from 'lucide-react';
 import StatCard from '../components/StatCard';
-import { useAuth } from '../components/AuthContext';
-import { getPortfolio, getPortfolioAssets } from '../lib/portfolio';
-import { PortfolioAsset, Portfolio } from '../lib/supabase';
+import { usePortfolioData } from '../lib/queries';
+import type { PortfolioAsset } from '../lib/api';
+import PageTransition from '../components/PageTransition';
+import Skeleton from '../components/Skeleton';
+
+function getAssetColor(symbol: string): string {
+  const colors: Record<string, string> = {
+    BTC: 'bg-orange-500',
+    ETH: 'bg-purple-500',
+    SOL: 'bg-cyan-500',
+    AAPL: 'bg-gray-500',
+    TSLA: 'bg-red-500',
+  };
+  return colors[symbol] || 'bg-blue-500';
+}
 
 export default function PortfolioPage() {
-  const { user } = useAuth();
-  const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
-  const [assets, setAssets] = useState<PortfolioAsset[]>([]);
+  const { data: portfolioData, isLoading } = usePortfolioData();
+  const queryClient = useQueryClient();
 
-  useEffect(() => {
-    async function loadData() {
-      if (!user) return;
-      try {
-        const p = await getPortfolio(user.id);
-        if (p) {
-          setPortfolio(p);
-          const a = await getPortfolioAssets(p.id);
-          setAssets(a || []);
-        }
-      } catch (error) {
-        console.error('Error loading portfolio:', error);
-      }
-    }
-
-    loadData();
-  }, [user]);
-
-  const displayAssets = [
-    { symbol: 'BTC', name: 'Bitcoin', quantity: 0.5, value: 21625, change: 3.2, color: 'bg-orange-500' },
-    { symbol: 'ETH', name: 'Ethereum', quantity: 5, value: 11400, change: -1.5, color: 'bg-purple-500' },
-    { symbol: 'SOL', name: 'Solana', quantity: 50, value: 5115, change: 5.8, color: 'bg-cyan-500' },
-    { symbol: 'AAPL', name: 'Apple Inc.', quantity: 100, value: 17825, change: 0.8, color: 'bg-gray-500' },
-    { symbol: 'TSLA', name: 'Tesla Inc.', quantity: 50, value: 12140, change: -2.1, color: 'bg-red-500' },
-  ];
+  const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['portfolio-data'] });
+  };
 
   return (
-    <div className="flex-1 bg-[#0a0f1e] p-8 overflow-auto">
+    <PageTransition className="flex-1 bg-slate-50 p-8 overflow-auto dark:bg-[#0a0f1e]">
       <div className="mb-8 flex justify-between items-center">
         <div>
-          <h1 className="text-white text-3xl font-bold mb-2">Портфель</h1>
-          <p className="text-gray-400">Управление активами и распределение капитала</p>
+          <h1 className="text-3xl font-bold text-slate-900 mb-2 dark:text-white">Portfolio</h1>
+          <p className="text-slate-500 dark:text-gray-400">
+            Asset management and capital allocation
+          </p>
         </div>
-        <button className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center gap-2">
-          <RefreshCw className="w-4 h-4" />
-          Обновить
+        <button
+          onClick={handleRefresh}
+          disabled={isLoading}
+          className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center gap-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+          Refresh
         </button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <StatCard
-          title="Общая Стоимость"
-          value={`$${(portfolio?.total_value || 10000).toLocaleString()}`}
-          subtitle="+8.5% за 24ч"
+          title="Total Value"
+          value={
+            portfolioData
+              ? `$${portfolioData.total_value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+              : '—'
+          }
+          subtitle={
+            portfolioData
+              ? `${((portfolioData.free_cash / portfolioData.total_value) * 100).toFixed(1)}% free cash`
+              : 'Loading...'
+          }
           icon={DollarSign}
           trend="up"
+          isLoading={isLoading}
         />
         <StatCard
-          title="Количество Активов"
-          value={assets.length || '5'}
-          subtitle={`Crypto: 3 • Stocks: 2`}
+          title="Number of Assets"
+          value={portfolioData ? `${portfolioData.assets_count}` : '—'}
+          subtitle={portfolioData ? `${portfolioData.assets.length} positions` : 'Loading...'}
           icon={PieChart}
+          isLoading={isLoading}
         />
         <StatCard
-          title="Нереализованная P&L"
-          value="$1,247.50"
-          subtitle="+2.4%"
+          title="Unrealized P&L"
+          value={
+            portfolioData
+              ? `$${portfolioData.unrealized_pnl.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+              : '—'
+          }
+          subtitle={
+            portfolioData && portfolioData.total_value > 0
+              ? `${((portfolioData.unrealized_pnl / (portfolioData.total_value - portfolioData.unrealized_pnl)) * 100).toFixed(2)}%`
+              : '—'
+          }
           icon={TrendingUp}
-          trend="up"
+          trend={portfolioData && portfolioData.unrealized_pnl >= 0 ? 'up' : 'down'}
+          isLoading={isLoading}
         />
         <StatCard
-          title="Свободные Средства"
-          value="$3,895.00"
-          subtitle="22.2% от портфеля"
+          title="Available Funds"
+          value={
+            portfolioData
+              ? `$${portfolioData.free_cash.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+              : '—'
+          }
+          subtitle={
+            portfolioData
+              ? `${((portfolioData.free_cash / portfolioData.total_value) * 100).toFixed(1)}% of portfolio`
+              : 'Loading...'
+          }
           icon={DollarSign}
+          isLoading={isLoading}
         />
       </div>
 
-      <div className="bg-[#141b2d] border border-gray-800 rounded-xl p-6">
+      <div className="bg-white border border-slate-200 rounded-xl p-6 dark:bg-[#141b2d] dark:border-gray-800">
         <div className="mb-6">
-          <h2 className="text-white text-lg font-semibold mb-1">Активы в Портфеле</h2>
-          <p className="text-gray-400 text-sm">Детальный обзор всех активов</p>
+          <h2 className="text-lg font-semibold text-slate-900 mb-1 dark:text-white">
+            Portfolio Assets
+          </h2>
+          <p className="text-slate-500 text-sm dark:text-gray-400">
+            Detailed overview of all assets
+          </p>
         </div>
 
         <div className="overflow-hidden">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-gray-800">
-                <th className="text-left py-4 px-4 text-gray-400 text-sm font-medium">Актив</th>
-                <th className="text-right py-4 px-4 text-gray-400 text-sm font-medium">Количество</th>
-                <th className="text-right py-4 px-4 text-gray-400 text-sm font-medium">Стоимость</th>
-                <th className="text-right py-4 px-4 text-gray-400 text-sm font-medium">Изменение</th>
+              <tr className="border-b border-slate-200 dark:border-gray-800">
+                <th className="text-left py-4 px-4 text-slate-500 text-sm font-medium dark:text-gray-400">
+                  Asset
+                </th>
+                <th className="text-right py-4 px-4 text-slate-500 text-sm font-medium dark:text-gray-400">
+                  Quantity
+                </th>
+                <th className="text-right py-4 px-4 text-slate-500 text-sm font-medium dark:text-gray-400">
+                  Value
+                </th>
+                <th className="text-right py-4 px-4 text-slate-500 text-sm font-medium dark:text-gray-400">
+                  Change
+                </th>
               </tr>
             </thead>
             <tbody>
-              {displayAssets.map((asset) => (
-                <tr key={asset.symbol} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
-                  <td className="py-5 px-4">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 ${asset.color} rounded-full flex items-center justify-center`}>
-                        <span className="text-white font-bold text-sm">{asset.symbol[0]}</span>
-                      </div>
-                      <div>
-                        <p className="text-white font-medium">{asset.symbol}</p>
-                        <p className="text-gray-400 text-sm">{asset.name}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="py-5 px-4 text-right">
-                    <p className="text-white font-medium">{asset.quantity}</p>
-                  </td>
-                  <td className="py-5 px-4 text-right">
-                    <p className="text-white font-medium">${asset.value.toLocaleString()}</p>
-                  </td>
-                  <td className="py-5 px-4 text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      {asset.change > 0 ? (
-                        <>
-                          <TrendingUp className="w-4 h-4 text-green-500" />
-                          <span className="text-green-500 font-medium">+{asset.change}%</span>
-                        </>
-                      ) : (
-                        <>
-                          <TrendingDown className="w-4 h-4 text-red-500" />
-                          <span className="text-red-500 font-medium">{asset.change}%</span>
-                        </>
-                      )}
-                    </div>
+              {isLoading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={i} className="border-b border-slate-100 dark:border-gray-800/50">
+                    <td className="py-5 px-4">
+                      <Skeleton className="h-10 w-32" />
+                    </td>
+                    <td className="py-5 px-4 text-right">
+                      <Skeleton className="h-4 w-16 ml-auto" />
+                    </td>
+                    <td className="py-5 px-4 text-right">
+                      <Skeleton className="h-4 w-20 ml-auto" />
+                    </td>
+                    <td className="py-5 px-4 text-right">
+                      <Skeleton className="h-4 w-16 ml-auto" />
+                    </td>
+                  </tr>
+                ))
+              ) : !portfolioData || portfolioData.assets.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="py-8 text-center text-slate-500 dark:text-gray-400">
+                    No assets in portfolio
                   </td>
                 </tr>
-              ))}
+              ) : (
+                portfolioData.assets.map((asset: PortfolioAsset) => (
+                  <tr
+                    key={asset.symbol}
+                    className="border-b border-slate-100 hover:bg-slate-50 transition-colors dark:border-gray-800/50 dark:hover:bg-gray-800/30"
+                  >
+                    <td className="py-5 px-4">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`w-10 h-10 ${getAssetColor(asset.symbol)} rounded-full flex items-center justify-center text-white`}
+                        >
+                          <span className="font-bold text-sm">{asset.symbol[0]}</span>
+                        </div>
+                        <div>
+                          <p className="font-medium text-slate-900 dark:text-white">
+                            {asset.symbol}
+                          </p>
+                          <p className="text-sm text-slate-500 dark:text-gray-400">{asset.name}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-5 px-4 text-right">
+                      <p className="font-medium text-slate-900 dark:text-white">
+                        {asset.quantity.toLocaleString()}
+                      </p>
+                    </td>
+                    <td className="py-5 px-4 text-right">
+                      <p className="font-medium text-slate-900 dark:text-white">
+                        ${asset.value.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      </p>
+                    </td>
+                    <td className="py-5 px-4 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        {asset.change_percent >= 0 ? (
+                          <>
+                            <TrendingUp className="w-4 h-4 text-green-600 dark:text-green-500" />
+                            <span className="font-medium text-green-600 dark:text-green-500">
+                              +{asset.change_percent.toFixed(2)}%
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <TrendingDown className="w-4 h-4 text-red-600 dark:text-red-500" />
+                            <span className="font-medium text-red-600 dark:text-red-500">
+                              {asset.change_percent.toFixed(2)}%
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
       </div>
-    </div>
+    </PageTransition>
   );
 }

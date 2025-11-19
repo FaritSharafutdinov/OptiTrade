@@ -36,11 +36,11 @@ describe('Login page', () => {
   it('validates email and password', async () => {
     renderLogin();
 
-    const [submit] = screen.getAllByRole('button', { name: /войти/i });
+    const [submit] = screen.getAllByRole('button', { name: /sign in/i });
     fireEvent.click(submit);
 
-    expect(await screen.findByText(/Email обязателен/i)).toBeInTheDocument();
-    expect(await screen.findByText(/Пароль должен содержать минимум 6 символов/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Email is required/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Password must be at least 6 characters/i)).toBeInTheDocument();
   });
 
   it('calls signIn with provided credentials', async () => {
@@ -54,7 +54,7 @@ describe('Login page', () => {
       target: { value: 'password' },
     });
 
-    const [submit] = screen.getAllByRole('button', { name: /войти/i });
+    const [submit] = screen.getAllByRole('button', { name: /sign in/i });
     fireEvent.click(submit);
 
     await waitFor(() =>
