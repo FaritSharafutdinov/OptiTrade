@@ -23,12 +23,12 @@ This document tracks everything we still want to polish. Items are grouped by ur
 
 4. **Form validation**
 
-   - Move login forms to `react-hook-form` + `zod`.
-   - Enforce password strength, e-mail format, field-level feedback, and disable submit buttons while pending.
+   - ✅ Login форма переписана на `react-hook-form` + `zod`: единая схема, inline ошибки, disable на submit.
+   - Следующий шаг — перенести остальные формы (например, Settings) на те же инструменты и добавить проверки сложности пароля.
 
 5. **Type safety**
-   - Eliminate duplicated type definitions (`Trade` etc.) between `supabase.ts` and `types/index.ts`.
-   - Generate types from Supabase schema and re-export them so the app has a single source of truth.
+   - ✅ Supabase-типы (Portfolio, Trade, Alert, PriceCache) живут в `src/types`, `lib/supabase` их только ре-экспортирует — дублирования больше нет.
+   - Следующий шаг — генерировать эти определения прямо из схемы Supabase, чтобы не поддерживать их руками.
 
 ## 🟡 Important upgrades
 
@@ -115,22 +115,22 @@ This document tracks everything we still want to polish. Items are grouped by ur
 
 ```json
 {
-	"dependencies": {
-		"@tanstack/react-query": "^5.x",
-		"react-hook-form": "^7.x",
-		"zod": "^3.x",
-		"recharts": "^2.x",
-		"framer-motion": "^10.x",
-		"react-hot-toast": "^2.x",
-		"zustand": "^4.x"
-	},
-	"devDependencies": {
-		"prettier": "^3.x",
-		"@types/node": "^20.x",
-		"vitest": "^1.x",
-		"@testing-library/react": "^14.x",
-		"@testing-library/jest-dom": "^6.x"
-	}
+  "dependencies": {
+    "@tanstack/react-query": "^5.x",
+    "react-hook-form": "^7.x",
+    "zod": "^3.x",
+    "recharts": "^2.x",
+    "framer-motion": "^10.x",
+    "react-hot-toast": "^2.x",
+    "zustand": "^4.x"
+  },
+  "devDependencies": {
+    "prettier": "^3.x",
+    "@types/node": "^20.x",
+    "vitest": "^1.x",
+    "@testing-library/react": "^14.x",
+    "@testing-library/jest-dom": "^6.x"
+  }
 }
 ```
 
