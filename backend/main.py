@@ -212,3 +212,101 @@ async def record_trade(entry: Dict[str, Any], x_api_key: Optional[str] = Header(
 
     finally:
         db.close()
+
+
+from fastapi import WebSocket, WebSocketDisconnect
+from typing import List
+import json
+
+# В памяти храним открытые позиции (в реальном проекте — из БД или биржи)
+open_positions = [
+    {"symbol": "BTC", "quantity": 0.5, "avg_price": 62300.0, "current_price": 61625.0},
+    {"symbol": "ETH", "quantity": 5.0, "avg_price": 3450.0, "current_price": 3400.0},
+    {"symbol": "SOL", "quantity": 50.0, "avg_price": 138.0, "current_price": 115.0},
+    {"symbol": "AAPL", "quantity": 100.0, "avg_price": 178.5, "current_price": 178.25},
+    {"symbol": "TSLA", "quantity": 50.0, "avg_price": 242.0, "current_price": 240.0},
+]
+
+# Уведомления как на скрине
+notifications = [
+    {"type": "warning", "text": "Высокая волатильность BTC показывает +15% за час"},
+    {"type": "success", "text": "Прибыльная сделка ETH продан с +$450"},
+    {"type": "info", "text": "Открыта длинная позиция SOL"},
+]
+
+
+@app.get("/dashboard")
+async def dashboard():
+    total_value = sum(p["quantity"] * p["current_price"] for p in open_positions)
+    unrealized_pnl = sum(
+        (p["current_price"] - p["avg_price"]) * p["quantity"]
+        for p in open_positions
+    )
+
+    return {
+        "balance": 17500.00,
+        "total_pnl": 7500.00,
+        "win_rate": 68.4,
+        "total_trades": 186,
+        "active_positions": len(open_positions),
+        "positions_list": [p["symbol"] for p in open_positions],
+        "chart_balance": {"from": 10000.00, "to": 17500.00},
+        "chart_pnl": {"profit": 9200.00, "loss": 1700.00},
+        "notifications": notifications,
+        "uptime": "47д 23ч",
+        "status": "active" if bot_state["running"] else "stopped",
+        "model": "PPO v1"
+    }
+
+
+@app.get("/portfolio")
+async def portfolio():
+    assets = []
+    total_value = 0
+    unrealized_pnl_total = 0
+
+    for pos in open_positions:
+        value = pos["quantity"] * pos["current_price"]
+        unrealized = (pos["current_price"] - pos["avg_price"]) * pos["quantity"]
+        change_pct = (pos["current_price"] - pos["avg_price"]) / pos["avg_price"] * 100
+
+        total_value += value
+        unrealized_pnl_total += unrealized
+
+        assets.append({
+            "symbol": pos["symbol"],
+            "name": {
+                "BTC": "Bitcoin", "ETH": "Ethereum", "SOL": "Solana",
+                "AAPL": "Apple Inc.", "TSLA": "Tesla Inc."
+            }.get(pos["symbol"], pos["symbol"]),
+            "quantity": pos["quantity"],
+            "avg_price": pos["avg_price"],
+            "current_price": pos["current_price"],
+            "value": round(value, 2),
+            "change_percent": round(change_pct, 2),
+            "unrealized_pnl": round(unrealized, 2)
+        })
+
+    return {
+        "total_value": round(total_value + 3895, 2),  # + свободные средства
+        "assets_count": len(assets),
+        "unrealized_pnl": round(unrealized_pnl_total, 2),
+        "free_cash": 3895.00,
+        "assets": assets
+    }
+
+
+@app.get("/notifications")
+async def get_notifications():
+    return notifications
+
+
+@app.websocket("/ws/dashboard")
+async def websocket_dashboard(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            await websocket.send_json(await dashboard())  # просто шлём весь дашборд
+            await asyncio.sleep(5)
+    except WebSocketDisconnect:
+        pass

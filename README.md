@@ -92,4 +92,4 @@ Run every command from `frontend/`:
 - `docs/IMPROVEMENTS.md` – prioritized backlog with recommended libraries
 - `docs/WORK_REPORT.md` – log of completed tasks and owners
 
-Keep these docs current whenever you add subsystems or change workflows—the next teammate will thank you.
+# Keep these docs current whenever you add subsystems or change workflows—the next teammate will thank you.
