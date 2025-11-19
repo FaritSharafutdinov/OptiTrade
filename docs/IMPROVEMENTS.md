@@ -39,7 +39,8 @@ This document tracks everything we still want to polish. Items are grouped by ur
 
 7. **Performance**
 
-   - Add memoization for heavy components, lazy-load large pages, split routes, and audit re-renders.
+   - ✅ `StatCard` и `Sidebar` мемоизированы, все страницы грузятся через `React.lazy` + `Suspense`.
+   - Дальше — динамический импорт тяжёлых виджетов (графики) и анализ таблиц Portfolio на повторные рендеры.
 
 8. **Accessibility**
 

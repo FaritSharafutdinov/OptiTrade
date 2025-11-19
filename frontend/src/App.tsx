@@ -1,30 +1,34 @@
+import { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './components/AuthContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import ProtectedRoute from './components/ProtectedRoute';
 import Sidebar from './components/Sidebar';
-import Dashboard from './pages/Dashboard';
-import Portfolio from './pages/Portfolio';
-import MarketAnalysis from './pages/MarketAnalysis';
-import TradeHistory from './pages/TradeHistory';
-import Backtesting from './pages/Backtesting';
-import Settings from './pages/Settings';
-import Login from './pages/Login';
+
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Portfolio = lazy(() => import('./pages/Portfolio'));
+const MarketAnalysis = lazy(() => import('./pages/MarketAnalysis'));
+const TradeHistory = lazy(() => import('./pages/TradeHistory'));
+const Backtesting = lazy(() => import('./pages/Backtesting'));
+const Settings = lazy(() => import('./pages/Settings'));
+const Login = lazy(() => import('./pages/Login'));
 
 function AppLayout() {
   return (
     <div className="flex h-screen bg-[#0a0f1e] overflow-hidden">
       <Sidebar />
-      <Routes>
-        <Route path="/dashboard" element={<Dashboard onLogout={() => window.location.reload()} />} />
-        <Route path="/portfolio" element={<Portfolio />} />
-        <Route path="/analysis" element={<MarketAnalysis />} />
-        <Route path="/history" element={<TradeHistory />} />
-        <Route path="/backtesting" element={<Backtesting />} />
-        <Route path="/settings" element={<Settings />} />
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
-      </Routes>
+      <Suspense fallback={<div className="flex-1 flex items-center justify-center text-gray-400">Загрузка...</div>}>
+        <Routes>
+          <Route path="/dashboard" element={<Dashboard onLogout={() => window.location.reload()} />} />
+          <Route path="/portfolio" element={<Portfolio />} />
+          <Route path="/analysis" element={<MarketAnalysis />} />
+          <Route path="/history" element={<TradeHistory />} />
+          <Route path="/backtesting" element={<Backtesting />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </Suspense>
     </div>
   );
 }
@@ -32,17 +36,19 @@ function AppLayout() {
 function AppContent() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<Login onSuccess={() => window.location.reload()} />} />
-        <Route
-          path="/*"
-          element={
-            <ProtectedRoute>
-              <AppLayout />
-            </ProtectedRoute>
-          }
-        />
-      </Routes>
+      <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-gray-400">Загрузка...</div>}>
+        <Routes>
+          <Route path="/login" element={<Login onSuccess={() => window.location.reload()} />} />
+          <Route
+            path="/*"
+            element={
+              <ProtectedRoute>
+                <AppLayout />
+              </ProtectedRoute>
+            }
+          />
+        </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }

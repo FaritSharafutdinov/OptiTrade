@@ -1,7 +1,8 @@
+import { memo } from 'react';
 import { NavLink } from 'react-router-dom';
 import { LayoutGrid, Briefcase, TrendingUp, History, BarChart3, Settings } from 'lucide-react';
 
-export default function Sidebar() {
+function SidebarComponent() {
   const menuItems = [
     { path: '/dashboard', label: 'Дашборд', icon: LayoutGrid },
     { path: '/portfolio', label: 'Портфель', icon: Briefcase },
@@ -68,3 +69,6 @@ export default function Sidebar() {
     </div>
   );
 }
+
+const Sidebar = memo(SidebarComponent);
+export default Sidebar;
