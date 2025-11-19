@@ -1,6 +1,18 @@
-# OptiTrade Frontend · Work Report
+# OptiTrade · Work Report
 
 ## Snapshot · November 2025
+
+### 4. PostgreSQL Integration & Database Seeding
+
+- Migrated from SQLite to PostgreSQL for production-ready database support.
+- Created comprehensive seeding script (`scripts/seed_db.py`) generating 2000 trades with P&L, 100 positions, 500 notifications, 100 backtests, and 20 bot configs.
+- Fixed Backtesting page errors (total_return_pct handling) and added null safety checks across all frontend pages.
+- All endpoints now fetch data from PostgreSQL database instead of mock data.
+- Result: Full database integration with realistic test data for development and testing.
+
+---
+
+## Snapshot · November 2025 (Frontend)
 
 ### 1. Charting overhaul
 

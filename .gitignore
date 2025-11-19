@@ -31,4 +31,22 @@ pnpm-debug.log*
 # Coverage / test output
 coverage/
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+*.egg-info/
+dist/
+*.egg
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
 
