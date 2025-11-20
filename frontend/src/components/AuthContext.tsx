@@ -1,0 +1,84 @@
+import { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { User } from '@supabase/supabase-js';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
+
+interface AuthContextType {
+  user: User | null;
+  loading: boolean;
+  authenticated: boolean;
+  loginAsDemo: () => void;
+}
+
+const AuthContext = createContext<AuthContextType>({
+  user: null,
+  loading: true,
+  authenticated: false,
+  loginAsDemo: () => undefined,
+});
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const loginAsDemo = useCallback(() => {
+    const mockUser = {
+      id: 'dev-user',
+      email: 'demo@local.dev',
+      app_metadata: {},
+      user_metadata: {},
+      aud: 'authenticated',
+      created_at: new Date().toISOString(),
+    } as User;
+
+    setUser(mockUser);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) {
+      loginAsDemo();
+      return;
+    }
+
+    const checkAuth = async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        setUser(data.session?.user || null);
+      } catch (error) {
+        console.error('Auth check error:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    checkAuth();
+
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user || null);
+    });
+
+    return () => data.subscription.unsubscribe();
+  }, [loginAsDemo]);
+
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        loading,
+        authenticated: !!user,
+        loginAsDemo,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within AuthProvider');
+  }
+  return context;
+}
