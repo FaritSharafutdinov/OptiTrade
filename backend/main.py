@@ -1,19 +1,22 @@
 import os
 import datetime
+import re
 from typing import Optional, List, Dict, Any
-
 from fastapi import FastAPI, HTTPException, Header, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, validator, condecimal, confloat, conint
 import httpx
-
 from sqlalchemy import (
     Column, Integer, String, Numeric, TIMESTAMP, JSON, create_engine, select, desc
 )
 from sqlalchemy.orm import declarative_base, sessionmaker
-
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
-
+from typing import Literal
+from fastapi import WebSocket, WebSocketDisconnect
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+import json
 
 # ---- Load config ------------------------------------------------------------
 load_dotenv()
@@ -186,6 +189,36 @@ def get_bot_state(db):
 
 
 # ---- Pydantic schemas ------------------------------------------------------
+
+class TradeCreate(BaseModel):
+    symbol: str = Field(..., min_length=1, max_length=10, pattern="^[A-Z0-9.-]+$")
+    action: Literal["BUY", "SELL", "HOLD"]
+    price: condecimal(gt=0, decimal_places=8, max_digits=18)
+    size: condecimal(gt=0, decimal_places=8, max_digits=18)
+    fee: condecimal(ge=0, decimal_places=8, max_digits=18) = 0
+    pnl: Optional[condecimal(decimal_places=8, max_digits=18)] = None
+    timestamp: Optional[datetime.datetime] = None
+    extra: Dict[str, Any] = Field(default_factory=dict)
+
+    @validator('symbol')
+    def symbol_uppercase(cls, v):
+        return v.upper()
+
+    @validator('timestamp', pre=True, always=True)
+    def set_timestamp(cls, v):
+        if v is None:
+            return datetime.datetime.now(datetime.timezone.utc)
+        if isinstance(v, str):
+            try:
+                return datetime.datetime.fromisoformat(v.replace('Z', '+00:00'))
+            except ValueError:
+                raise ValueError("Invalid timestamp format")
+        return v
+
+    @validator('action')
+    def action_uppercase(cls, v):
+        return v.upper()
+
 class TradeOut(BaseModel):
     id: int
     timestamp: datetime.datetime
@@ -200,14 +233,30 @@ class TradeOut(BaseModel):
 
 
 class StartRequest(BaseModel):
-    mode: str = "paper"
+    mode: Literal["paper", "live"] = "paper"
+
+    @validator('mode')
+    def mode_lowercase(cls, v):
+        return v.lower()
 
 
 class UpdateConfigRequest(BaseModel):
-    max_position_size: Optional[float] = None
-    risk_per_trade: Optional[float] = None
+    max_position_size: Optional[confloat(gt=0)] = None
+    risk_per_trade: Optional[confloat(ge=0, le=100)] = Field(None, description="Risk per trade in percentage (0-100)")
     symbols: Optional[List[str]] = None
-    mode: Optional[str] = None
+    mode: Optional[Literal["paper", "live"]] = None
+
+    @validator('symbols', each_item=True)
+    def validate_symbols(cls, v):
+        if not re.match(r"^[A-Z0-9.-]+$", v):
+            raise ValueError(f"Invalid symbol format: {v}")
+        return v.upper()
+
+    @validator('risk_per_trade')
+    def validate_risk(cls, v):
+        if v is not None and (v < 0 or v > 100):
+            raise ValueError("Risk per trade must be between 0 and 100")
+        return v
 
 
 class BacktestOut(BaseModel):
@@ -221,12 +270,46 @@ class BacktestOut(BaseModel):
 
 
 class BacktestRunRequest(BaseModel):
-    start_date: str
-    end_date: str
-    initial_balance: float = 10000.0
+    start_date: str = Field(..., pattern="^\d{4}-\d{2}-\d{2}$")
+    end_date: str = Field(..., pattern="^\d{4}-\d{2}-\d{2}$")
+    initial_balance: confloat(gt=0) = 10000.0
     symbols: Optional[List[str]] = None
-    strategy_params: Optional[Dict[str, Any]] = None
+    strategy_params: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
+    @validator('end_date')
+    def validate_dates(cls, v, values):
+        if 'start_date' in values:
+            start = datetime.datetime.strptime(values['start_date'], "%Y-%m-%d")
+            end = datetime.datetime.strptime(v, "%Y-%m-%d")
+            if end <= start:
+                raise ValueError("End date must be after start date")
+            if (end - start).days > 365 * 5:  # 5 years max
+                raise ValueError("Backtest period cannot exceed 5 years")
+        return v
+
+    @validator('symbols', each_item=True)
+    def validate_symbols(cls, v):
+        if not re.match(r"^[A-Z0-9.-]+$", v):
+            raise ValueError(f"Invalid symbol format: {v}")
+        return v.upper()
+
+class NotificationCreate(BaseModel):
+    type: Literal["warning", "success", "info", "error"]
+    text: str = Field(..., min_length=1, max_length=500)
+
+    @validator('text')
+    def validate_text(cls, v):
+        if len(v.strip()) == 0:
+            raise ValueError("Notification text cannot be empty")
+        return v.strip()
+
+class PositionUpdate(BaseModel):
+    symbol: str = Field(..., min_length=1, max_length=10, pattern="^[A-Z0-9.-]+$")
+    current_price: condecimal(gt=0, decimal_places=8, max_digits=18)
+
+    @validator('symbol')
+    def symbol_uppercase(cls, v):
+        return v.upper()
 
 # ---- Dependency -------------------------------------------------------------
 def require_api_key(x_api_key: Optional[str] = Header(None)):
@@ -307,12 +390,19 @@ async def bot_update_config(cfg: UpdateConfigRequest, x_api_key: str = Depends(r
 
 
 @app.get("/trades", response_model=List[TradeOut])
-async def get_trades(limit: int = 100, offset: int = 0, symbol: Optional[str] = None):
+async def get_trades(
+    limit: conint(ge=1, le=1000) = 100,
+    offset: conint(ge=0) = 0,
+    symbol: Optional[str] = None
+):
     db = SessionLocal()
     try:
         qry = select(Trade).order_by(desc(Trade.timestamp)).offset(offset).limit(limit)
         if symbol:
-            qry = select(Trade).where(Trade.symbol == symbol).order_by(desc(Trade.timestamp)).offset(offset).limit(limit)
+            # Валидация символа
+            if not re.match(r"^[A-Z0-9.-]+$", symbol):
+                raise HTTPException(status_code=400, detail="Invalid symbol format")
+            qry = select(Trade).where(Trade.symbol == symbol.upper()).order_by(desc(Trade.timestamp)).offset(offset).limit(limit)
 
         rows = db.execute(qry).scalars().all()
         return rows
@@ -395,45 +485,36 @@ async def generate_demo_trades(x_api_key: Optional[str] = Header(None)):
 
 
 @app.post("/trades/record")
-async def record_trade(entry: Dict[str, Any], x_api_key: Optional[str] = Header(None)):
-
+async def record_trade(trade: TradeCreate, x_api_key: Optional[str] = Header(None)):
     if x_api_key != API_KEY:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     db = SessionLocal()
-
     try:
-        timestamp = entry.get("timestamp")
-        if isinstance(timestamp, str):
-            timestamp = datetime.datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-        if timestamp is None:
-            timestamp = datetime.datetime.now(datetime.timezone.utc)
-        if timestamp.tzinfo is None:
-            timestamp = timestamp.replace(tzinfo=datetime.timezone.utc)
-
+        # Данные уже валидированы через Pydantic
         t = Trade(
-            timestamp=timestamp,
-            symbol=entry["symbol"],
-            action=entry["action"],
-            price=entry["price"],
-            size=entry["size"],
-            fee=entry.get("fee", 0),
-            pnl=entry.get("pnl", 0),
-            extra=entry.get("extra", {}),  # <--- FIXED
+            timestamp=trade.timestamp,
+            symbol=trade.symbol,
+            action=trade.action,
+            price=trade.price,
+            size=trade.size,
+            fee=trade.fee,
+            pnl=trade.pnl,
+            extra=trade.extra,
         )
 
         db.add(t)
-        
+
         state = get_bot_state(db)
-        if entry.get("pnl"):
-            state.realized_pnl += float(entry.get("pnl", 0))
-        state.last_action = {"action": entry["action"], "timestamp": timestamp.isoformat()}
+        if trade.pnl:
+            state.realized_pnl += float(trade.pnl)
+        state.last_action = {"action": trade.action, "timestamp": trade.timestamp.isoformat()}
         state.updated_at = datetime.datetime.now(datetime.timezone.utc)
-        
-        symbol = entry["symbol"]
-        action = entry["action"].upper()
-        price = float(entry["price"])
-        size = float(entry["size"])
+
+        symbol = trade.symbol
+        action = trade.action.upper()
+        price = float(trade.price)
+        size = float(trade.size)
         
         existing_position = db.query(Position).filter(Position.symbol == symbol).first()
         
@@ -462,7 +543,8 @@ async def record_trade(entry: Dict[str, Any], x_api_key: Optional[str] = Header(
                 existing_position.quantity = remaining_quantity
                 existing_position.current_price = price
                 existing_position.updated_at = datetime.datetime.now(datetime.timezone.utc)
-        
+
+        # Пересчет unrealized P&L
         positions = db.query(Position).all()
         unrealized_pnl = sum(
             (float(pos.current_price) - float(pos.avg_price)) * float(pos.quantity)
@@ -472,10 +554,11 @@ async def record_trade(entry: Dict[str, Any], x_api_key: Optional[str] = Header(
         
         db.commit()
         db.refresh(t)
-        
-        if entry.get("pnl") and abs(float(entry.get("pnl", 0))) > 100:
-            notif_type = "success" if float(entry.get("pnl", 0)) > 0 else "warning"
-            notif_text = f"{'Profitable' if float(entry.get('pnl', 0)) > 0 else 'Loss'} trade: {symbol} {action} with {entry.get('pnl', 0):+.2f} P&L"
+
+        # Создание уведомления для значительных P&L
+        if trade.pnl and abs(float(trade.pnl)) > 100:
+            notif_type = "success" if float(trade.pnl) > 0 else "warning"
+            notif_text = f"{'Profitable' if float(trade.pnl) > 0 else 'Loss'} trade: {symbol} {action} with {float(trade.pnl):+.2f} P&L"
             notification = Notification(
                 type=notif_type,
                 text=notif_text,
@@ -489,10 +572,6 @@ async def record_trade(entry: Dict[str, Any], x_api_key: Optional[str] = Header(
     finally:
         db.close()
 
-
-from fastapi import WebSocket, WebSocketDisconnect
-from typing import List
-import json
 
 SYMBOL_NAMES = {
     "BTC": "Bitcoin",
@@ -727,7 +806,10 @@ async def get_market_analysis():
 
 
 @app.get("/backtests", response_model=List[BacktestOut])
-async def get_backtests(limit: int = 20, offset: int = 0):
+async def get_backtests(
+    limit: conint(ge=1, le=100) = 20,
+    offset: conint(ge=0) = 0
+):
     db = SessionLocal()
     try:
         result = db.execute(
@@ -755,7 +837,6 @@ async def get_backtest(backtest_id: int):
 async def run_backtest(request: BacktestRunRequest, x_api_key: Optional[str] = Header(None)):
     if x_api_key != API_KEY:
         raise HTTPException(status_code=401, detail="Unauthorized")
-    
     db = SessionLocal()
     try:
         new_backtest = Backtest(
@@ -785,7 +866,6 @@ async def run_backtest(request: BacktestRunRequest, x_api_key: Optional[str] = H
     finally:
         db.close()
 
-
 @app.websocket("/ws/dashboard")
 async def websocket_dashboard(websocket: WebSocket):
     await websocket.accept()
@@ -795,3 +875,75 @@ async def websocket_dashboard(websocket: WebSocket):
             await asyncio.sleep(5)
     except WebSocketDisconnect:
         pass
+
+@app.post("/positions/update-price")
+async def update_position_price(update: PositionUpdate, x_api_key: Optional[str] = Header(None)):
+    if x_api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    db = SessionLocal()
+    try:
+        position = db.query(Position).filter(Position.symbol == update.symbol).first()
+        if not position:
+            raise HTTPException(status_code=404, detail=f"Position for symbol {update.symbol} not found")
+
+        position.current_price = update.current_price
+        position.updated_at = datetime.datetime.now(datetime.timezone.utc)
+
+        # Пересчет unrealized P&L
+        state = get_bot_state(db)
+        positions = db.query(Position).all()
+        unrealized_pnl = sum(
+            (float(pos.current_price) - float(pos.avg_price)) * float(pos.quantity)
+            for pos in positions
+        )
+        state.unrealized_pnl = unrealized_pnl
+        state.updated_at = datetime.datetime.now(datetime.timezone.utc)
+
+        db.commit()
+        return {"status": "ok", "symbol": update.symbol, "new_price": float(update.current_price)}
+
+    finally:
+        db.close()
+
+
+# Новый endpoint для создания уведомлений
+@app.post("/notifications/create")
+async def create_notification(notification: NotificationCreate, x_api_key: Optional[str] = Header(None)):
+    if x_api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    db = SessionLocal()
+    try:
+        new_notification = Notification(
+            type=notification.type,
+            text=notification.text,
+            created_at=datetime.datetime.now(datetime.timezone.utc),
+        )
+        db.add(new_notification)
+        db.commit()
+        db.refresh(new_notification)
+        return {"status": "ok", "notification_id": new_notification.id}
+
+    finally:
+        db.close()
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Кастомный обработчик ошибок валидации"""
+    errors = []
+    for error in exc.errors():
+        field = " -> ".join(str(loc) for loc in error['loc'])
+        errors.append({
+            "field": field,
+            "message": error['msg'],
+            "type": error['type']
+        })
+
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": "Validation error",
+            "errors": errors
+        }
+    )
