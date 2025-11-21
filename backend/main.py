@@ -112,10 +112,28 @@ class BotState(Base):
     last_action = Column(JSON, nullable=True)
     updated_at = Column(TIMESTAMP(timezone=True), nullable=False, default=datetime.datetime.now(datetime.timezone.utc), onupdate=datetime.datetime.now(datetime.timezone.utc))
 
+class TradingSignal(Base):
+    __tablename__ = "trading_signals"
 
+    id = Column(Integer, primary_key=True, index=True)
+    symbol = Column(String, nullable=False)
+    signal = Column(String, nullable=False)  # BUY/SELL/HOLD
+    confidence = Column(Numeric(5, 4), nullable=False)
+    score = Column(Numeric(10, 8), nullable=False)
+    model_used = Column(String, nullable=False)  # ppo/a2c/sac/fallback
+    timestamp = Column(TIMESTAMP(timezone=True), nullable=False)
 
-# Database initialization moved to FastAPI startup event
+class TradingSignalOut(BaseModel):
+    id: int
+    symbol: str
+    signal: str
+    confidence: float
+    score: float
+    model_used: str
+    timestamp: datetime.datetime
 
+    class Config:
+        from_attributes = True
 
 # ---- FastAPI ---------------------------------------------------------------
 app = FastAPI(title="Agent-Trader Backend API")
@@ -191,7 +209,7 @@ def get_bot_state(db):
 # ---- Pydantic schemas ------------------------------------------------------
 
 class TradeCreate(BaseModel):
-    symbol: str = Field(..., min_length=1, max_length=10, pattern="^[A-Z0-9.-]+$")
+    symbol: str = Field(..., min_length=1, max_length=10, pattern=r"^[A-Z0-9.-]+$")
     action: Literal["BUY", "SELL", "HOLD"]
     price: condecimal(gt=0, decimal_places=8, max_digits=18)
     size: condecimal(gt=0, decimal_places=8, max_digits=18)
@@ -270,8 +288,8 @@ class BacktestOut(BaseModel):
 
 
 class BacktestRunRequest(BaseModel):
-    start_date: str = Field(..., pattern="^\d{4}-\d{2}-\d{2}$")
-    end_date: str = Field(..., pattern="^\d{4}-\d{2}-\d{2}$")
+    start_date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
+    end_date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
     initial_balance: confloat(gt=0) = 10000.0
     symbols: Optional[List[str]] = None
     strategy_params: Optional[Dict[str, Any]] = Field(default_factory=dict)
@@ -304,7 +322,7 @@ class NotificationCreate(BaseModel):
         return v.strip()
 
 class PositionUpdate(BaseModel):
-    symbol: str = Field(..., min_length=1, max_length=10, pattern="^[A-Z0-9.-]+$")
+    symbol: str = Field(..., min_length=1, max_length=10, pattern=r"^[A-Z0-9.-]+$")
     current_price: condecimal(gt=0, decimal_places=8, max_digits=18)
 
     @validator('symbol')
@@ -380,7 +398,7 @@ async def bot_stop(x_api_key: str = Depends(require_api_key)):
 async def bot_update_config(cfg: UpdateConfigRequest, x_api_key: str = Depends(require_api_key)):
     db = SessionLocal()
     try:
-        conf = BotConfig(name="default", config=cfg.dict())
+        conf = BotConfig(name="default", config=cfg.model_dump())
         db.add(conf)
         db.commit()
         db.refresh(conf)
