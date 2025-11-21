@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.distributions import Normal
 import pandas as pd
-from envs.trading_env import EnhancedTradingEnv
+from environment.A2C_trading_env import EnhancedTradingEnv
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler
 
@@ -117,7 +117,7 @@ def a2c_train(env, actor, critic, actor_optimizer, critic_optimizer,
     return episode_rewards, actor_losses, critic_losses
 
 # ---------------- Data ----------------
-df = pd.read_csv("BTC_USDT_OI_SP500_FEATURES_1h_2Y.csv", parse_dates=['timestamp'], index_col='timestamp')
+df = pd.read_csv(".\datasets\BTC_USDT_OI_SP500_FEATURES_1h_2Y.csv", parse_dates=['timestamp'], index_col='timestamp')
 df = df.sort_index()
 df.fillna(method='ffill', inplace=True)
 df.fillna(0, inplace=True)
@@ -154,9 +154,9 @@ rewards, actor_losses, critic_losses = a2c_train(env, actor, critic,
                                                  n_episodes=500, gamma=0.99)
 
 # ---------------- Save ----------------
-torch.save(actor.state_dict(), 'experiments/actor.pth')
-torch.save(critic.state_dict(), 'experiments/critic.pth')
-print("Models saved to experiments/actor.pth and experiments/critic.pth")
+torch.save(actor.state_dict(), 'RL_algoritms/models/A2C/actor.pth')
+torch.save(critic.state_dict(), 'RL_algoritms/models/A2C/critic.pth')
+print("Models saved to 'RL_algoritms/models/A2C")
 
 # ---------------- Plot ----------------
 plt.figure(figsize=(15, 5))

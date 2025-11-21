@@ -1,10 +1,63 @@
 import pandas as pd
-from envs.trading_env import EnhancedTradingEnv
+import numpy as np
+import matplotlib.pyplot as plt
+from pathlib import Path
+import sys
+import argparse
+from environment.stable_env import EnhancedTradingEnv
 from stable_baselines3 import PPO, SAC, A2C
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.monitor import Monitor
-import matplotlib.pyplot as plt
-import numpy as np
+
+
+
+
+MODELS = {
+    "ppo": {
+        "class": PPO,
+        "params": {
+            "policy": "MlpPolicy",
+            "learning_rate": 3e-4,
+            "n_steps": 2048,
+            "batch_size": 256,
+            "n_epochs": 10,
+            "gamma": 0.99,
+            "gae_lambda": 0.95,
+            "clip_range": 0.2,
+            "ent_coef": 0.01,
+            "policy_kwargs": dict(net_arch=[512, 512, 256]),
+        }
+    },
+    "a2c": {
+        "class": A2C,
+        "params": {
+            "policy": "MlpPolicy",
+            "learning_rate": 7e-4,
+            "n_steps": 5,
+            "gamma": 0.99,
+            "gae_lambda": 1.0,
+            "ent_coef": 0.0,
+            "policy_kwargs": dict(net_arch=[400, 300]),
+        }
+    },
+    "sac": {
+        "class": SAC,
+        "params": {
+            "policy": "MlpPolicy",
+            "learning_rate": 1e-4,
+            "buffer_size": 100000,
+            "learning_starts": 5000,
+            "batch_size": 256,
+            "tau": 0.005,
+            "gamma": 0.99,
+            "train_freq": 1,
+            "gradient_steps": 1,
+            "ent_coef": "auto",
+            "policy_kwargs": dict(net_arch=[400, 300]),
+        }
+    }
+}
+
 
 class MetricsCallback(BaseCallback):
     def __init__(self, verbose=0):
@@ -25,9 +78,12 @@ class MetricsCallback(BaseCallback):
                     self.logger.record('metrics/total_trades', episode['total_trades'])
 
 
-def train_model():
+def train_model(model_name: str):
     """Обучение модели"""
-    df = pd.read_csv("BTC_USDT_OI_FEATURES_1h_2Y.csv", parse_dates=['timestamp'], index_col='timestamp')
+    config = MODELS[model_name]
+    ModelClass = config["class"]
+    params = config["params"]
+    df = pd.read_csv(r".\datasets\BTC_USDT_OI_FEATURES_1h_2Y.csv", parse_dates=['timestamp'], index_col='timestamp')
     
     df = df.sort_index()
     
@@ -52,38 +108,25 @@ def train_model():
         normalize=True
     ))
     
-    model = SAC(
-        "MlpPolicy",
-        train_env,
-        learning_rate=1e-4,
-        buffer_size=50000,
-        learning_starts=1000,
-        batch_size=256,
-        tau=0.005,
-        gamma=0.99,
-        train_freq=1,
-        gradient_steps=1,
-        action_noise=None,
-        ent_coef='auto',
-        target_entropy='auto',
-        policy_kwargs=dict(
-            net_arch=[400, 300]
-        ),
-        verbose=1,
-        device='auto'
-)
-    
- 
-    metrics_callback = MetricsCallback()
-    
-    model.learn(
-        total_timesteps=100000,
-        callback=metrics_callback, 
-        progress_bar=True,
-        # tb_log_name="PPO_enhanced"  
+    print("Обучение модели", model_name)
+    model = ModelClass(
+        env=train_env,
+        verbose=0,
+        device="auto",
+        tensorboard_log=None,
+        **params
     )
+
+    model.learn(
+    total_timesteps=200,
+    callback=None,             
+    progress_bar=True,     
+)
+
+    save_name = fr".\models\{model_name}_baseline"
+    model.save(save_name)
+    print(f"\nМодель сохранена: {save_name}.zip")
     
-    model.save("enhanced_trading_model")
     return model, train_env, val_env
 
 def backtest_model_varied(model, env, num_episodes=5):
@@ -173,5 +216,11 @@ def plot_result(all_equities, all_returns):
 
 
 if __name__ == "__main__":
-    model, train_env, val_env = train_model()
-    returns, equities = backtest_model_varied(model, val_env, num_episodes=1)
+    parser = argparse.ArgumentParser(description="Обучение RL-агента для трейдинга")
+    parser.add_argument("--model", type=str, default="ppo", choices=["ppo", "a2c", "sac"],
+                        help="Модель для обучения: ppo, a2c или sac (по умолчанию: ppo)")
+    args = parser.parse_args()
+
+    model, train, val_env = train_model(args.model.lower())
+    backtest_model_varied(model, val_env, num_episodes=1)
+    
