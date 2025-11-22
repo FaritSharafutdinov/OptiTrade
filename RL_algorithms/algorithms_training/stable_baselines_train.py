@@ -58,32 +58,33 @@ MODELS = {
           }
             },
     },
-    "sac": {
+      "sac": {
         "class": SAC, 
- "params": {
-            "policy": "MlpPolicy",
-            "learning_rate": 3e-4,
-            "buffer_size": 1000000,
-            "learning_starts": 10000,
-            "batch_size": 256,
+   "params": {
+            "policy": "MlpPolicy", 
+            "learning_rate": 1e-4,  
+            "buffer_size": 200000,  
+            "learning_starts": 10000,  
+            "batch_size": 128, 
             "tau": 0.005,
-            "gamma": 0.99,
-            "train_freq": 1,
-            "gradient_steps": 1,
-            "ent_coef": "auto",
+            "gamma": 0.95, 
+            "train_freq": 4,  
+            "gradient_steps": 2, 
+            "ent_coef": "auto", 
             "target_update_interval": 1,
             "target_entropy": "auto",
-            "use_sde": False,
-            "sde_sample_freq": -1,
+            "use_sde": True,  
+            "sde_sample_freq": 4, 
             "policy_kwargs": {
-                "net_arch": [512, 512, 256],
-                "log_std_init": -2,
-                "use_expln": True,
-                "clip_mean": 2.0
-            }
+                "net_arch": [400, 300], 
+                "log_std_init": -3, 
+                "use_expln": True, 
+                "clip_mean": 2.0,
+            },
         }
     }
 }
+
 
 
 class MetricsCallback(BaseCallback):
