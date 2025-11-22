@@ -17,43 +17,70 @@ MODELS = {
         "class": PPO,
         "params": {
             "policy": "MlpPolicy",
-            "learning_rate": 3e-4,
+            "learning_rate": 1e-5,
             "n_steps": 2048,
-            "batch_size": 256,
+            "batch_size": 128,
             "n_epochs": 10,
             "gamma": 0.99,
             "gae_lambda": 0.95,
             "clip_range": 0.2,
-            "ent_coef": 0.01,
-            "policy_kwargs": dict(net_arch=[512, 512, 256]),
+            "ent_coef": 0.02,
+            "vf_coef": 0.5,
+            "max_grad_norm": 0.5,
+            "policy_kwargs": {
+                "net_arch": {
+                    "pi": [256, 256],
+                    "vf": [256, 256]
+                }
+            }
         }
     },
     "a2c": {
         "class": A2C,
-        "params": {
+          "params": {
             "policy": "MlpPolicy",
-            "learning_rate": 7e-4,
-            "n_steps": 5,
-            "gamma": 0.99,
-            "gae_lambda": 1.0,
-            "ent_coef": 0.0,
-            "policy_kwargs": dict(net_arch=[400, 300]),
-        }
+            "learning_rate": 7e-4,  
+            "n_steps": 250,  
+            "gamma": 0.99, 
+            "gae_lambda": 0.95, 
+            "ent_coef": 0.01,  
+            "vf_coef": 0.5, 
+            "max_grad_norm": 0.5,
+            "use_rms_prop": True, 
+            "normalize_advantage": True, 
+            "policy_kwargs": {
+                "net_arch": {
+                    "pi": [256, 128],  
+                    "vf": [256, 128]   
+                },
+                "log_std_init": -0.5,
+                "ortho_init": True
+          }
+            },
     },
     "sac": {
-        "class": SAC,
-        "params": {
+        "class": SAC, 
+ "params": {
             "policy": "MlpPolicy",
-            "learning_rate": 1e-4,
-            "buffer_size": 100000,
-            "learning_starts": 5000,
+            "learning_rate": 3e-4,
+            "buffer_size": 1000000,
+            "learning_starts": 10000,
             "batch_size": 256,
             "tau": 0.005,
             "gamma": 0.99,
             "train_freq": 1,
             "gradient_steps": 1,
             "ent_coef": "auto",
-            "policy_kwargs": dict(net_arch=[400, 300]),
+            "target_update_interval": 1,
+            "target_entropy": "auto",
+            "use_sde": False,
+            "sde_sample_freq": -1,
+            "policy_kwargs": {
+                "net_arch": [512, 512, 256],
+                "log_std_init": -2,
+                "use_expln": True,
+                "clip_mean": 2.0
+            }
         }
     }
 }
@@ -96,14 +123,14 @@ def train_model(model_name: str):
 
     train_env = Monitor(EnhancedTradingEnv(
         train_df, 
-        window_size=20,
+        window_size=30,
         use_technical_features=True,
         normalize=True
     ))
     
     val_env = Monitor(EnhancedTradingEnv(
         val_df,
-        window_size=20, 
+        window_size=30, 
         use_technical_features=True,
         normalize=True
     ))
@@ -118,7 +145,7 @@ def train_model(model_name: str):
     )
 
     model.learn(
-    total_timesteps=200,
+    total_timesteps=200000,
     callback=None,             
     progress_bar=True,     
 )
@@ -149,7 +176,7 @@ def backtest_model_varied(model, env, num_episodes=5):
         
         done = False
         step_count = 0
-        max_steps = 2000  
+        max_steps = 5000  
         
         while not done and step_count < max_steps:
 
