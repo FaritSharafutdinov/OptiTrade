@@ -21,10 +21,27 @@ load_dotenv()
 API_KEY = os.getenv("ADMIN_API_KEY", "devkey")
 MODEL_SERVICE_URL = os.getenv("MODEL_SERVICE_URL", "http://127.0.0.1:8001")
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://postgres:postgres@localhost:5432/optitrade"
-)
+# Use SQLite by default for local development (no PostgreSQL required)
+# Set DATABASE_URL env var to use PostgreSQL if needed
+# Force SQLite if DATABASE_URL contains postgresql and there are encoding issues
+db_url_from_env = os.getenv("DATABASE_URL", "")
+if db_url_from_env and db_url_from_env.startswith("postgresql"):
+    # Check if we're on Windows with potentially problematic paths (OneDrive with Cyrillic)
+    import sys
+    if sys.platform == "win32":
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning("PostgreSQL URL detected but Windows detected - using SQLite instead")
+        logger.warning("Set DATABASE_URL=sqlite:///./optitrade.db in .env to avoid this message")
+        DATABASE_URL = "sqlite:///./optitrade.db"
+    else:
+        DATABASE_URL = db_url_from_env
+else:
+    DATABASE_URL = db_url_from_env or "sqlite:///./optitrade.db"
+
+import logging
+logger = logging.getLogger(__name__)
+logger.info(f"Using database: {DATABASE_URL[:50]}...")  # Log first 50 chars to avoid leaking credentials
 
 
 # ---- SQLAlchemy -------------------------------------------------------------
@@ -43,6 +60,14 @@ if DATABASE_URL.startswith("postgresql"):
         pool_size=5,
         max_overflow=10,
         connect_args=connect_args,
+    )
+elif DATABASE_URL.startswith("sqlite"):
+    # SQLite connection args
+    engine = create_engine(
+        DATABASE_URL,
+        echo=False,
+        future=True,
+        connect_args={"check_same_thread": False},  # Needed for SQLite with FastAPI
     )
 else:
     engine = create_engine(DATABASE_URL, echo=False, future=True)
@@ -74,27 +99,28 @@ class BotConfig(Base):
 class Backtest(Base):
     __tablename__ = "backtests"
     id = Column(Integer, primary_key=True)
-    created_at = Column(TIMESTAMP(timezone=True), nullable=False, default=datetime.datetime.now(datetime.timezone.utc))
-    params = Column(JSON, default={})
-    metrics = Column(JSON, default={})
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False)
+    params = Column(JSON, nullable=False)
+    metrics = Column(JSON, nullable=False)
+    equity_curve = Column(JSON, nullable=True)  # Store equity curve for visualization
 
 
 class Position(Base):
     __tablename__ = "positions"
     id = Column(Integer, primary_key=True)
-    symbol = Column(String, nullable=False, index=True)
+    symbol = Column(String, nullable=False)
     quantity = Column(Numeric(18, 8), nullable=False)
     avg_price = Column(Numeric(18, 8), nullable=False)
     current_price = Column(Numeric(18, 8), nullable=False)
-    updated_at = Column(TIMESTAMP(timezone=True), nullable=False, default=datetime.datetime.now(datetime.timezone.utc), onupdate=datetime.datetime.now(datetime.timezone.utc))
+    updated_at = Column(TIMESTAMP(timezone=True), nullable=False)
 
 
 class Notification(Base):
     __tablename__ = "notifications"
     id = Column(Integer, primary_key=True)
-    type = Column(String, nullable=False)  # warning, success, info
+    type = Column(String, nullable=False)  # 'success', 'warning', 'info'
     text = Column(String, nullable=False)
-    created_at = Column(TIMESTAMP(timezone=True), nullable=False, default=datetime.datetime.now(datetime.timezone.utc))
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False)
     read = Column(Integer, default=0)
 
 
@@ -127,9 +153,29 @@ async def init_db():
     try:
         Base.metadata.create_all(bind=engine)
         
-        # Initialize bot state if it doesn't exist
+        # Migrate existing tables: Add equity_curve column to backtests if it doesn't exist
         db_init = SessionLocal()
         try:
+            # Check if backtests table exists and has equity_curve column
+            from sqlalchemy import text
+            try:
+                # Check if table exists by trying to get its columns
+                result = db_init.execute(text("PRAGMA table_info(backtests)"))
+                columns = [row[1] for row in result.fetchall()]
+                
+                if 'equity_curve' not in columns:
+                    logger.info("Migrating backtests table: Adding equity_curve column...")
+                    db_init.execute(text("ALTER TABLE backtests ADD COLUMN equity_curve JSON"))
+                    db_init.commit()
+                    logger.info("✅ Added equity_curve column to backtests table")
+                else:
+                    logger.debug("Column equity_curve already exists in backtests table")
+            except Exception as table_check_error:
+                # Table might not exist yet - that's fine, SQLAlchemy will create it
+                logger.debug(f"Table check: {table_check_error} - table will be created if needed")
+                pass
+            
+            # Initialize bot state if it doesn't exist
             existing_state = db_init.query(BotState).filter(BotState.id == 1).first()
             if not existing_state:
                 initial_state = BotState(
@@ -144,6 +190,13 @@ async def init_db():
                 db_init.add(initial_state)
                 db_init.commit()
                 logger.info("✅ Created initial bot state")
+        except Exception as migration_error:
+            logger.warning(f"Migration warning: {migration_error}")
+            # Try to rollback if needed
+            try:
+                db_init.rollback()
+            except:
+                pass
         finally:
             db_init.close()
         logger.info("✅ Database initialized successfully")
@@ -208,6 +261,9 @@ class UpdateConfigRequest(BaseModel):
     risk_per_trade: Optional[float] = None
     symbols: Optional[List[str]] = None
     mode: Optional[str] = None
+    stop_loss_percent: Optional[float] = None
+    take_profit_percent: Optional[float] = None
+    max_daily_loss: Optional[float] = None
 
 
 class BacktestOut(BaseModel):
@@ -215,6 +271,7 @@ class BacktestOut(BaseModel):
     created_at: datetime.datetime
     params: Dict[str, Any]
     metrics: Dict[str, Any]
+    equity_curve: Optional[List[float]] = None
 
     class Config:
         from_attributes = True
@@ -271,10 +328,26 @@ async def bot_start(req: StartRequest, x_api_key: str = Depends(require_api_key)
     db = SessionLocal()
     try:
         state = get_bot_state(db)
+        
+        # Initialize trading executor based on mode
+        if req.mode.lower() == "live":
+            # Check if exchange API keys are configured
+            exchange_api_key = os.getenv("BINANCE_API_KEY")
+            exchange_api_secret = os.getenv("BINANCE_API_SECRET")
+            
+            if not exchange_api_key or not exchange_api_secret:
+                logger.warning("Live mode requested but exchange API keys not configured")
+                return {
+                    "status": "error",
+                    "message": "Exchange API keys required for live trading. Set BINANCE_API_KEY and BINANCE_API_SECRET in .env"
+                }
+        
         state.running = 1
-        state.mode = req.mode
+        state.mode = req.mode.lower()
         state.updated_at = datetime.datetime.now(datetime.timezone.utc)
         db.commit()
+        
+        logger.info(f"Bot started in {req.mode.upper()} mode")
         return {"status": "started", "mode": req.mode}
     finally:
         db.close()
@@ -297,10 +370,35 @@ async def bot_stop(x_api_key: str = Depends(require_api_key)):
 async def bot_update_config(cfg: UpdateConfigRequest, x_api_key: str = Depends(require_api_key)):
     db = SessionLocal()
     try:
-        conf = BotConfig(name="default", config=cfg.dict())
+        # Import risk manager to update limits
+        from backend.risk_manager import get_risk_manager
+        
+        # Update risk limits if provided
+        risk_manager = get_risk_manager()
+        
+        if cfg.max_position_size is not None:
+            risk_manager.limits.max_position_size = cfg.max_position_size
+        if cfg.risk_per_trade is not None:
+            risk_manager.limits.max_risk_per_trade = cfg.risk_per_trade
+        if cfg.stop_loss_percent is not None:
+            risk_manager.limits.stop_loss_percent = cfg.stop_loss_percent
+        if cfg.take_profit_percent is not None:
+            risk_manager.limits.take_profit_percent = cfg.take_profit_percent
+        if cfg.max_daily_loss is not None:
+            risk_manager.limits.max_daily_loss = cfg.max_daily_loss
+        
+        # Update mode if provided
+        if cfg.mode:
+            state = get_bot_state(db)
+            state.mode = cfg.mode.lower()
+            db.commit()
+        
+        conf = BotConfig(name="default", config=cfg.dict(exclude_unset=True))
         db.add(conf)
         db.commit()
         db.refresh(conf)
+        
+        logger.info("Bot configuration updated")
         return {"status": "ok", "config_id": conf.id}
     finally:
         db.close()
@@ -322,8 +420,42 @@ async def get_trades(limit: int = 100, offset: int = 0, symbol: Optional[str] = 
 
 @app.post("/model/predict")
 async def model_predict(payload: Dict[str, Any]):
+    """Predict using model service - supports model_type parameter"""
     async with httpx.AsyncClient(timeout=5) as client:
         r = await client.post(f"{MODEL_SERVICE_URL}/predict", json=payload)
+        r.raise_for_status()
+        return r.json()
+
+
+@app.get("/model/list")
+async def list_models():
+    """List available models from model service"""
+    async with httpx.AsyncClient(timeout=5) as client:
+        r = await client.get(f"{MODEL_SERVICE_URL}/models")
+        r.raise_for_status()
+        return r.json()
+
+
+@app.post("/model/switch")
+async def switch_model(request: Dict[str, str], x_api_key: Optional[str] = Header(None)):
+    """Switch to another model (requires API key)"""
+    if x_api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.post(f"{MODEL_SERVICE_URL}/models/switch", json=request)
+        r.raise_for_status()
+        return r.json()
+
+
+@app.post("/model/load")
+async def load_model(request: Dict[str, str], x_api_key: Optional[str] = Header(None)):
+    """Load a model without switching (requires API key)"""
+    if x_api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.post(f"{MODEL_SERVICE_URL}/models/load", json=request)
         r.raise_for_status()
         return r.json()
 
@@ -419,7 +551,7 @@ async def record_trade(entry: Dict[str, Any], x_api_key: Optional[str] = Header(
             size=entry["size"],
             fee=entry.get("fee", 0),
             pnl=entry.get("pnl", 0),
-            extra=entry.get("extra", {}),  # <--- FIXED
+            extra=entry.get("extra", {}),
         )
 
         db.add(t)
@@ -493,6 +625,7 @@ async def record_trade(entry: Dict[str, Any], x_api_key: Optional[str] = Header(
 from fastapi import WebSocket, WebSocketDisconnect
 from typing import List
 import json
+import asyncio
 
 SYMBOL_NAMES = {
     "BTC": "Bitcoin",
@@ -501,6 +634,27 @@ SYMBOL_NAMES = {
     "AAPL": "Apple Inc.",
     "TSLA": "Tesla Inc.",
 }
+
+
+async def get_active_model_name_async() -> str:
+    """Get active model name from model service (async version)"""
+    try:
+        async with httpx.AsyncClient(timeout=2) as client:
+            r = await client.get(f"{MODEL_SERVICE_URL}/models")
+            if r.status_code == 200:
+                data = r.json()
+                active = data.get("active_model")
+                if active:
+                    return f"{active.upper()} v1"
+                # If no active model but we have loaded models, use first one
+                loaded = data.get("models_loaded", [])
+                if loaded:
+                    return f"{loaded[0].upper()} v1"
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug(f"Could not fetch active model name: {e}")
+    return "PPO v1"  # Fallback
 
 
 @app.get("/dashboard")
@@ -550,10 +704,32 @@ async def dashboard():
             "notifications": [{"type": n.type, "text": n.text} for n in notifications_list],
             "uptime": uptime,
             "status": "active" if state.running else "stopped",
-            "model": "PPO v1"
+            "model": await get_active_model_name_async()
+        }
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Database error in dashboard: {e}")
+        # Return default data if DB fails
+        return {
+            "balance": 10000.0,
+            "total_pnl": 0.0,
+            "win_rate": 0.0,
+            "total_trades": 0,
+            "active_positions": 0,
+            "positions_list": [],
+            "chart_balance": {"from": 7000.0, "to": 10000.0},
+            "chart_pnl": {"profit": 0.0, "loss": 0.0},
+            "notifications": [],
+            "uptime": "0d 0h",
+            "status": "stopped",
+            "model": await get_active_model_name_async()
         }
     finally:
-        db.close()
+        try:
+            db.close()
+        except:
+            pass
 
 
 @app.get("/portfolio")
@@ -758,30 +934,69 @@ async def run_backtest(request: BacktestRunRequest, x_api_key: Optional[str] = H
     
     db = SessionLocal()
     try:
+        import asyncio
+        from backend.backtest_engine import run_backtest_async
+        
+        # Extract model type from strategy params or use default
+        model_type = "ppo"
+        if request.strategy_params:
+            model_type = request.strategy_params.get("model_type", "ppo")
+        
+        # Normalize model_type
+        model_type = model_type.lower() if model_type else "ppo"
+        
+        # Run real backtest
+        logger.info(f"Starting backtest: {request.start_date} to {request.end_date}, model: {model_type}")
+        logger.info(f"Strategy params received: {request.strategy_params}")
+        
+        # Run backtest in thread pool to avoid blocking
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: run_backtest_async(
+                symbols=request.symbols or ["BTC"],
+                start_date=request.start_date,
+                end_date=request.end_date,
+                initial_balance=request.initial_balance or 10000.0,
+                model_type=model_type,
+                strategy_params=request.strategy_params or {}
+            )
+        )
+        
+        if not result.get("success", False):
+            error_msg = result.get("error", "Unknown error")
+            logger.error(f"Backtest failed: {error_msg}")
+            raise HTTPException(status_code=500, detail=f"Backtest failed: {error_msg}")
+        
+        metrics = result.get("metrics", {})
+        equity_curve = result.get("equities", [])  # Get equity curve if available
+        
+        # Save backtest results to database
         new_backtest = Backtest(
             created_at=datetime.datetime.now(datetime.timezone.utc),
             params={
                 "start_date": request.start_date,
                 "end_date": request.end_date,
-                "initial_balance": request.initial_balance,
-                "symbols": request.symbols or ["BTC", "ETH"],
+                "initial_balance": request.initial_balance or 10000.0,
+                "symbols": request.symbols or ["BTC"],
                 "strategy_params": request.strategy_params or {},
+                "model_type": model_type,
             },
-            metrics={
-                "total_return": round((request.initial_balance * 1.15) - request.initial_balance, 2),
-                "total_return_pct": 15.0,
-                "sharpe_ratio": 1.8,
-                "max_drawdown": -5.2,
-                "win_rate": 68.5,
-                "total_trades": 142,
-                "profit_factor": 1.95,
-                "final_balance": round(request.initial_balance * 1.15, 2),
-            },
+            metrics=metrics,
+            equity_curve=equity_curve if equity_curve else None,
         )
         db.add(new_backtest)
         db.commit()
         db.refresh(new_backtest)
+        
+        logger.info(f"Backtest completed: {metrics.get('total_return_pct', 0):.2f}% return, {metrics.get('total_trades', 0)} trades")
+        
         return new_backtest
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error running backtest: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Backtest error: {str(e)}")
     finally:
         db.close()
 
@@ -791,7 +1006,132 @@ async def websocket_dashboard(websocket: WebSocket):
     await websocket.accept()
     try:
         while True:
-            await websocket.send_json(await dashboard())  # просто шлём весь дашборд
+            await websocket.send_json(await dashboard())
             await asyncio.sleep(5)
     except WebSocketDisconnect:
         pass
+
+
+# New endpoints for tasks 1-8
+
+@app.post("/trades/execute")
+async def execute_trade(
+    trade_request: Dict[str, Any],
+    x_api_key: Optional[str] = Header(None)
+):
+    """Execute a trade (paper or live) based on model prediction"""
+    if x_api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    db = SessionLocal()
+    try:
+        from backend.trading_executor import TradingExecutor
+        from backend.exchange_client import ExchangeType
+        
+        # Get bot state to determine mode
+        state = get_bot_state(db)
+        mode = state.mode or "paper"
+        
+        # Initialize trading executor
+        executor = TradingExecutor(
+            mode=mode,
+            exchange_type=ExchangeType.BINANCE
+        )
+        
+        # Execute trade
+        result = await executor.execute_trade(
+            symbol=trade_request.get("symbol"),
+            action=trade_request.get("action"),
+            predicted_price=trade_request.get("price"),
+            amount=trade_request.get("amount"),
+            current_balance=float(state.balance),
+            existing_positions={}  # TODO: fetch from DB
+        )
+        
+        # If trade was executed, record it
+        if result.get("status") == "executed":
+            # Record trade in database
+            timestamp = datetime.datetime.now(datetime.timezone.utc)
+            t = Trade(
+                timestamp=timestamp,
+                symbol=result["symbol"],
+                action=result["action"],
+                price=result["price"],
+                size=result["amount"],
+                fee=result.get("fee", 0),
+                extra={
+                    "mode": result["mode"],
+                    "order_id": result.get("order_id"),
+                    "execution_timestamp": timestamp.isoformat()
+                }
+            )
+            db.add(t)
+            db.commit()
+            db.refresh(t)
+            
+            result["trade_id"] = t.id
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error executing trade: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+@app.get("/risk/stats")
+async def get_risk_stats():
+    """Get current risk management statistics"""
+    from backend.risk_manager import get_risk_manager
+    
+    risk_manager = get_risk_manager()
+    stats = risk_manager.get_daily_stats()
+    
+    # Convert percentages to fractions for frontend (5.0 -> 0.05)
+    # stop_loss_percent and take_profit_percent are stored as percentages (5.0 = 5%)
+    # max_risk_per_trade is also stored as percentage (2.0 = 2%)
+    # max_position_size and max_daily_loss are absolute values in dollars
+    def percent_to_fraction(pct: float) -> float:
+        """Convert percentage value to fraction (5.0 -> 0.05)"""
+        if pct is None:
+            return 0.0
+        return pct / 100.0 if pct > 1.0 else pct
+    
+    # Get initial balance from bot state (default 10000)
+    db = SessionLocal()
+    try:
+        state = get_bot_state(db)
+        initial_balance = float(state.balance) if state.balance else 10000.0
+    except:
+        initial_balance = 10000.0
+    finally:
+        db.close()
+    
+    return {
+        "limits": {
+            "max_position_size": (risk_manager.limits.max_position_size / initial_balance) if initial_balance > 0 else 0.1,  # Convert to fraction of initial balance
+            "max_daily_loss": (risk_manager.limits.max_daily_loss / initial_balance) if initial_balance > 0 else 0.05,  # Convert to fraction of initial balance
+            "max_risk_per_trade": percent_to_fraction(risk_manager.limits.max_risk_per_trade),
+            "stop_loss_percent": percent_to_fraction(risk_manager.limits.stop_loss_percent),
+            "take_profit_percent": percent_to_fraction(risk_manager.limits.take_profit_percent)
+        },
+        "daily_stats": {
+            "daily_pnl": float(-stats.get("daily_loss", 0.0)),  # Convert loss to PnL (negative loss = profit)
+            "trades_today": int(stats.get("daily_trades", 0)),
+            "last_reset_date": risk_manager.last_reset_date.isoformat() if hasattr(risk_manager.last_reset_date, 'isoformat') else str(risk_manager.last_reset_date)
+        },
+        "should_stop_trading": risk_manager.should_stop_trading()
+    }
+
+
+@app.get("/models/performance")
+async def get_models_performance():
+    """Get performance metrics for all models"""
+    from backend.model_performance_tracker import get_performance_tracker
+    
+    tracker = get_performance_tracker()
+    comparison = tracker.compare_models()
+    
+    return comparison
+

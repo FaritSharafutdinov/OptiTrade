@@ -13,9 +13,11 @@ import {
   getBacktest,
   runBacktest,
   getMarketAnalysis,
+  listModels,
   type BotConfig,
   type StartBotRequest,
   type BacktestRunRequest,
+  type ModelsListResponse,
 } from './api';
 import { useDashboardStore } from '../state/dashboardStore';
 import { toast } from 'react-hot-toast';
@@ -171,5 +173,14 @@ export function useMarketAnalysis() {
     queryFn: getMarketAnalysis,
     staleTime: 30_000,
     refetchInterval: 30_000, // Auto-refresh every 30 seconds
+  });
+}
+
+export function useModels() {
+  return useQuery<ModelsListResponse>({
+    queryKey: ['models'],
+    queryFn: listModels,
+    staleTime: 30_000,
+    refetchInterval: 5_000, // Refresh every 5 seconds
   });
 }

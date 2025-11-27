@@ -2,8 +2,12 @@ import { memo } from 'react';
 import { NavLink } from 'react-router-dom';
 import { LayoutGrid, Briefcase, TrendingUp, History, BarChart3, Settings } from 'lucide-react';
 import ThemeToggle from './ThemeToggle';
+import ModelSelector from './ModelSelector';
+import { useDashboardData } from '../lib/queries';
 
 function SidebarComponent() {
+  const { data: dashboardData } = useDashboardData();
+  
   const menuItems = [
     { path: '/dashboard', label: 'Dashboard', icon: LayoutGrid },
     { path: '/portfolio', label: 'Portfolio', icon: Briefcase },
@@ -55,19 +59,24 @@ function SidebarComponent() {
         <div className="bg-slate-100/80 dark:bg-gray-800/50 rounded-lg p-3 border border-slate-200 dark:border-gray-700">
           <div className="flex justify-between items-center mb-2">
             <span className="text-slate-500 dark:text-gray-400 text-xs">Agent Status</span>
-            <span className="text-green-600 dark:text-green-500 text-xs font-semibold">Active</span>
+            <span className={`text-xs font-semibold ${
+              dashboardData?.status === 'active'
+                ? 'text-green-600 dark:text-green-500'
+                : 'text-slate-500 dark:text-gray-400'
+            }`}>
+              {dashboardData?.status === 'active' ? 'Active' : 'Stopped'}
+            </span>
           </div>
           <div className="space-y-1">
             <div className="flex justify-between text-xs">
-              <span className="text-slate-500 dark:text-gray-400">Model</span>
-              <span className="text-slate-900 dark:text-white font-medium">PRO v1</span>
-            </div>
-            <div className="flex justify-between text-xs">
               <span className="text-slate-500 dark:text-gray-400">Uptime</span>
-              <span className="text-slate-900 dark:text-white font-medium">47h 23m</span>
+              <span className="text-slate-900 dark:text-white font-medium">
+                {dashboardData?.uptime || '0d 0h'}
+              </span>
             </div>
           </div>
         </div>
+        <ModelSelector />
       </div>
     </div>
   );

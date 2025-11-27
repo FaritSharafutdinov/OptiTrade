@@ -1,41 +1,16 @@
-export type BotStatus = {
-  running: boolean;
-  balance: number;
-  unrealized_pnl: number;
-  realized_pnl: number;
-  open_positions: Array<{
-    symbol?: string;
-    size?: number;
-    avg_price?: number;
-  }>;
-  last_action?: {
-    action: string;
-    timestamp: string;
-  } | null;
-  mode?: string;
-};
-
-export type TradeRecord = {
-  id: number;
-  timestamp: string;
-  symbol: string;
-  action: string;
-  price: number;
-  size: number;
-  pnl?: number | null;
-};
-
+// API Base Configuration
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 
+// Error handling
 export class ApiError extends Error {
   status: number;
   data?: unknown;
 
   constructor(message: string, status: number, data?: unknown, options?: { cause?: unknown }) {
-    super(message);
-    this.name = 'ApiError';
+    super(message, options);
     this.status = status;
     this.data = data;
+    this.name = 'ApiError';
     if (options?.cause) {
       (this as Error & { cause?: unknown }).cause = options.cause;
     }
@@ -93,32 +68,31 @@ async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
   }
 }
 
-export async function getBotStatus() {
-  return fetchJSON<BotStatus>('/bot/status');
-}
+// ========== Type Definitions ==========
 
-export async function getRecentTrades(limit = 5, offset = 0, symbol?: string) {
-  const search = new URLSearchParams({ limit: limit.toString(), offset: offset.toString() });
-  if (symbol) {
-    search.append('symbol', symbol);
-  }
-  return fetchJSON<TradeRecord[]>(`/trades?${search.toString()}`);
-}
+export type TradeRecord = {
+  id: number;
+  timestamp: string;
+  symbol: string;
+  action: 'BUY' | 'SELL';
+  price: number;
+  size: number;
+  fee: number;
+  pnl?: number | null;
+};
 
-export async function generateDemoTrades(apiKey: string) {
-  return fetchJSON<{ status: string; count?: number; message?: string }>('/trades/generate-demo', {
-    method: 'POST',
-    headers: {
-      'X-API-Key': apiKey,
-    },
-  });
-}
-
-export type BotConfig = {
-  max_position_size?: number;
-  risk_per_trade?: number;
-  symbols?: string[];
-  mode?: string;
+export type BotStatus = {
+  running: boolean;
+  balance: number;
+  unrealized_pnl: number;
+  realized_pnl: number;
+  mode: string;
+  open_positions: Array<{
+    symbol: string;
+    size: number;
+    avg_price: number;
+  }>;
+  last_action: Record<string, unknown> | null;
 };
 
 export type DashboardData = {
@@ -132,27 +106,31 @@ export type DashboardData = {
   chart_pnl: { profit: number; loss: number };
   notifications: Array<{ type: 'warning' | 'success' | 'info'; text: string }>;
   uptime: string;
-  status: 'active' | 'stopped';
+  status: string;
   model: string;
 };
 
 export type PortfolioAsset = {
   symbol: string;
-  name: string;
   quantity: number;
   avg_price: number;
   current_price: number;
-  value: number;
-  change_percent: number;
-  unrealized_pnl: number;
+  updated_at: string;
 };
 
 export type PortfolioData = {
   total_value: number;
-  assets_count: number;
-  unrealized_pnl: number;
-  free_cash: number;
   assets: PortfolioAsset[];
+  unrealized_pnl: number;
+};
+
+export type BacktestParams = {
+  start_date: string;
+  end_date: string;
+  initial_balance: number;
+  symbols: string[];
+  strategy_params?: Record<string, unknown>;
+  model_type?: string;
 };
 
 export type BacktestMetrics = {
@@ -166,19 +144,26 @@ export type BacktestMetrics = {
   final_balance: number;
 };
 
-export type BacktestParams = {
-  start_date: string;
-  end_date: string;
-  initial_balance: number;
-  symbols?: string[];
-  strategy_params?: Record<string, unknown>;
-};
-
 export type Backtest = {
   id: number;
   created_at: string;
   params: BacktestParams;
   metrics: BacktestMetrics;
+  equity_curve?: number[];
+};
+
+export type BotConfig = {
+  max_position_size?: number;
+  risk_per_trade?: number;
+  symbols?: string[];
+  mode?: string;
+  stop_loss_percent?: number;
+  take_profit_percent?: number;
+  max_daily_loss?: number;
+};
+
+export type StartBotRequest = {
+  mode?: 'paper' | 'live';
 };
 
 export type BacktestRunRequest = {
@@ -189,9 +174,36 @@ export type BacktestRunRequest = {
   strategy_params?: Record<string, unknown>;
 };
 
-export type StartBotRequest = {
-  mode?: string;
+export type ModelInfo = {
+  type: string;
+  available: boolean;
+  loaded: boolean;
+  active: boolean;
+  path: string | null;
 };
+
+export type ModelsListResponse = {
+  available_models: ModelInfo[];
+  active_model: string | null;
+  total_loaded: number;
+};
+
+// ========== API Functions ==========
+
+export async function getBotStatus() {
+  return fetchJSON<BotStatus>('/bot/status');
+}
+
+export async function getRecentTrades(limit = 100, offset = 0, symbol?: string) {
+  const params = new URLSearchParams({
+    limit: limit.toString(),
+    offset: offset.toString(),
+  });
+  if (symbol) {
+    params.append('symbol', symbol);
+  }
+  return fetchJSON<TradeRecord[]>(`/trades?${params.toString()}`);
+}
 
 export async function startBot(request: StartBotRequest = { mode: 'paper' }, apiKey: string) {
   return fetchJSON<{ status: string; mode: string }>('/bot/start', {
@@ -296,4 +308,80 @@ export function getErrorMessage(error: unknown) {
     return error;
   }
   return 'Unexpected error';
+}
+
+// ========== Model Management API ==========
+
+export async function listModels() {
+  return fetchJSON<ModelsListResponse>('/model/list');
+}
+
+export async function switchModel(modelType: string, apiKey: string) {
+  return fetchJSON<{ status: string; message: string; active_model: string }>('/model/switch', {
+    method: 'POST',
+    body: JSON.stringify({ model_type: modelType }),
+    headers: {
+      'X-API-Key': apiKey,
+    },
+  });
+}
+
+export async function loadModel(modelType: string, apiKey: string) {
+  return fetchJSON<{ status: string; message: string; loaded_models: string[] }>('/model/load', {
+    method: 'POST',
+    body: JSON.stringify({ model_type: modelType }),
+    headers: {
+      'X-API-Key': apiKey,
+    },
+  });
+}
+
+// ========== Risk Management API ==========
+
+export type RiskLimits = {
+  max_position_size: number;
+  max_daily_loss: number;
+  max_risk_per_trade: number;
+  stop_loss_percent: number;
+  take_profit_percent: number;
+};
+
+export type DailyRiskStats = {
+  daily_pnl: number;
+  trades_today: number;
+  last_reset_date: string;
+};
+
+export type RiskStats = {
+  limits: RiskLimits;
+  daily_stats: DailyRiskStats;
+  should_stop_trading: boolean;
+};
+
+export async function getRiskStats() {
+  return fetchJSON<RiskStats>('/risk/stats');
+}
+
+// ========== Model Performance API ==========
+
+export type ModelPerformanceData = {
+  overall_stats: {
+    total_models_tracked: number;
+    total_trades_across_models: number;
+    total_pnl_across_models: number;
+    last_updated: string;
+  };
+  model_details: Array<{
+    model_type: string;
+    total_trades: number;
+    winning_trades: number;
+    win_rate: number;
+    total_pnl: number;
+    sharpe_ratio: number;
+    last_updated: string | null;
+  }>;
+};
+
+export async function getModelsPerformance() {
+  return fetchJSON<ModelPerformanceData>('/models/performance');
 }

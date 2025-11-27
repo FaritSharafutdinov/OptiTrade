@@ -50,3 +50,22 @@ dist/
 *.sqlite
 *.sqlite3
 
+# Windows batch files (development scripts - can be committed)
+# *.bat files in scripts/ are kept for Windows development convenience
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+*.swp
+*.swo
+*~
+
+# IDE
+*.sublime-project
+*.sublime-workspace
+
+# OS specific
+Thumbs.db
+desktop.ini
+
