@@ -468,7 +468,7 @@ async def generate_demo_trades(x_api_key: Optional[str] = Header(None)):
     
     db = SessionLocal()
     try:
-        symbols = ["BTC", "ETH", "SOL", "AAPL", "TSLA"]
+        symbols = ["BTC", "ETH", "SOL"]
         actions = ["BUY", "SELL"]
         
         existing = db.execute(select(Trade).limit(1)).scalar_one_or_none()
@@ -477,13 +477,32 @@ async def generate_demo_trades(x_api_key: Optional[str] = Header(None)):
         
         demo_trades = []
         base_time = datetime.datetime.now(datetime.timezone.utc)
+        import random
+        
+        # Базовая цена для каждого символа (примерные текущие рыночные цены)
+        base_prices = {
+            "BTC": 82000.0,
+            "ETH": 3400.0,
+            "SOL": 140.0
+        }
         
         for i in range(50):
             symbol = symbols[i % len(symbols)]
             action = actions[i % 2]
-            price = 50000 + (i * 100) if symbol == "BTC" else 3000 + (i * 50)
-            size = 0.1 + (i * 0.01)
-            pnl = (i % 3 - 1) * 100
+            # Генерируем цену с реалистичными колебаниями (±5% от базовой цены)
+            base_price = base_prices[symbol]
+            price_variation = random.uniform(-0.05, 0.05)  # ±5% вариация
+            price = base_price * (1 + price_variation)
+            
+            # Размеры сделок варьируются в зависимости от символа
+            if symbol == "BTC":
+                size = random.uniform(0.01, 0.5)  # BTC в монетах
+            elif symbol == "ETH":
+                size = random.uniform(0.1, 10.0)  # ETH в монетах
+            else:  # SOL
+                size = random.uniform(1.0, 100.0)  # SOL в монетах
+            
+            pnl = random.uniform(-500, 500)  # Случайный PnL для продаж
             
             trade = Trade(
                 timestamp=base_time - datetime.timedelta(hours=50-i),
