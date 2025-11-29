@@ -46,13 +46,60 @@ export default function TradeHistory() {
             'X-API-Key': API_KEY,
             'Content-Type': 'application/json',
           },
+          body: JSON.stringify({ clear_existing: true }), // Очищаем старые данные перед генерацией
         }
       );
       if (response.ok) {
+        const data = await response.json();
         queryClient.invalidateQueries({ queryKey: ['recent-trades'] });
+        queryClient.invalidateQueries({ queryKey: ['bot-status'] });
+        queryClient.invalidateQueries({ queryKey: ['dashboard-data'] });
+        queryClient.invalidateQueries({ queryKey: ['portfolio-data'] });
+        // Показать сообщение об успехе
+        alert(data.message || 'Demo trades generated successfully!');
+      } else {
+        const error = await response.json();
+        alert(error.detail || 'Failed to generate demo trades');
       }
     } catch (error) {
       console.error('Failed to generate demo trades:', error);
+      alert('Failed to generate demo trades. Please try again.');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+  
+  const handleClearDemo = async () => {
+    if (!confirm('Are you sure you want to clear all demo trades, positions, and notifications?')) {
+      return;
+    }
+    
+    setIsGenerating(true);
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'}/trades/clear-demo`,
+        {
+          method: 'POST',
+          headers: {
+            'X-API-Key': API_KEY,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+      if (response.ok) {
+        const data = await response.json();
+        queryClient.invalidateQueries({ queryKey: ['recent-trades'] });
+        queryClient.invalidateQueries({ queryKey: ['bot-status'] });
+        queryClient.invalidateQueries({ queryKey: ['dashboard-data'] });
+        queryClient.invalidateQueries({ queryKey: ['portfolio-data'] });
+        alert(`Cleared: ${data.deleted?.trades || 0} trades, ${data.deleted?.positions || 0} positions, ${data.deleted?.notifications || 0} notifications`);
+      } else {
+        const error = await response.json();
+        alert(error.detail || 'Failed to clear demo data');
+      }
+    } catch (error) {
+      console.error('Failed to clear demo data:', error);
+      alert('Failed to clear demo data. Please try again.');
     } finally {
       setIsGenerating(false);
     }
@@ -68,33 +115,53 @@ export default function TradeHistory() {
             {trades && trades.length > 0 && ` • ${trades.length} trades`}
           </p>
         </div>
-        {uniqueSymbols.length > 0 && (
-          <div className="flex gap-2">
-            <button
-              onClick={() => setSelectedSymbol(undefined)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                !selectedSymbol
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-white text-slate-700 border border-slate-300 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700'
-              }`}
-            >
-              All
-            </button>
-            {uniqueSymbols.map((symbol) => (
+        <div className="flex gap-3 items-center">
+          {uniqueSymbols.length > 0 && (
+            <div className="flex gap-2">
               <button
-                key={symbol}
-                onClick={() => setSelectedSymbol(symbol)}
+                onClick={() => setSelectedSymbol(undefined)}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  selectedSymbol === symbol
+                  !selectedSymbol
                     ? 'bg-blue-600 text-white'
                     : 'bg-white text-slate-700 border border-slate-300 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700'
                 }`}
               >
-                {symbol}
+                All
               </button>
-            ))}
-          </div>
-        )}
+              {uniqueSymbols.map((symbol) => (
+                <button
+                  key={symbol}
+                  onClick={() => setSelectedSymbol(symbol)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    selectedSymbol === symbol
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white text-slate-700 border border-slate-300 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700'
+                  }`}
+                >
+                  {symbol}
+                </button>
+              ))}
+            </div>
+          )}
+          {!selectedSymbol && (
+            <>
+              <button
+                onClick={handleClearDemo}
+                disabled={isGenerating}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+              >
+                Clear Demo
+              </button>
+              <button
+                onClick={handleGenerateDemo}
+                disabled={isGenerating}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+              >
+                Generate Demo
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="bg-white border border-slate-200 rounded-xl dark:bg-[#141b2d] dark:border-gray-800 overflow-hidden">
@@ -114,14 +181,24 @@ export default function TradeHistory() {
               {selectedSymbol ? `No trades for ${selectedSymbol}` : 'No trading history available'}
             </p>
             {!selectedSymbol && (
-              <button
-                onClick={handleGenerateDemo}
-                disabled={isGenerating}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <RefreshCw className={`w-4 h-4 ${isGenerating ? 'animate-spin' : ''}`} />
-                {isGenerating ? 'Generating...' : 'Generate Demo Trades'}
-              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleClearDemo}
+                  disabled={isGenerating}
+                  className="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isGenerating ? 'animate-spin' : ''}`} />
+                  {isGenerating ? 'Clearing...' : 'Clear Demo Data'}
+                </button>
+                <button
+                  onClick={handleGenerateDemo}
+                  disabled={isGenerating}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isGenerating ? 'animate-spin' : ''}`} />
+                  {isGenerating ? 'Generating...' : 'Generate Demo Trades'}
+                </button>
+              </div>
             )}
           </div>
         ) : (

@@ -460,20 +460,90 @@ async def load_model(request: Dict[str, str], x_api_key: Optional[str] = Header(
         return r.json()
 
 
-@app.post("/trades/generate-demo")
-async def generate_demo_trades(x_api_key: Optional[str] = Header(None)):
-    """Generate demo trades for testing"""
+@app.post("/trades/clear-demo")
+async def clear_demo_trades(x_api_key: Optional[str] = Header(None)):
+    """Clear all demo trades, positions, and notifications"""
     if x_api_key != API_KEY:
         raise HTTPException(status_code=401, detail="Unauthorized")
     
     db = SessionLocal()
     try:
+        # Удаляем все trades
+        trades_count = db.query(Trade).count()
+        db.query(Trade).delete()
+        
+        # Удаляем все positions
+        positions_count = db.query(Position).count()
+        db.query(Position).delete()
+        
+        # Удаляем все notifications
+        notifications_count = db.query(Notification).count()
+        db.query(Notification).delete()
+        
+        # Сбрасываем bot state
+        state = get_bot_state(db)
+        state.balance = 10000.0
+        state.realized_pnl = 0.0
+        state.unrealized_pnl = 0.0
+        state.running = 0
+        state.last_action = None
+        state.updated_at = datetime.datetime.now(datetime.timezone.utc)
+        
+        db.commit()
+        
+        return {
+            "status": "ok",
+            "message": "Demo data cleared",
+            "deleted": {
+                "trades": trades_count,
+                "positions": positions_count,
+                "notifications": notifications_count
+            }
+        }
+    finally:
+        db.close()
+
+
+@app.post("/trades/generate-demo")
+async def generate_demo_trades(
+    request: Optional[Dict[str, Any]] = None,
+    x_api_key: Optional[str] = Header(None)
+):
+    """Generate demo trades for testing
+    
+    Request body (optional):
+        clear_existing: bool - If True, clear existing demo data before generating new (default: True)
+    """
+    if x_api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    db = SessionLocal()
+    try:
+        # Извлекаем параметр clear_existing из тела запроса (по умолчанию True - всегда очищаем перед генерацией)
+        clear_existing = True
+        if request:
+            clear_existing = request.get("clear_existing", True)
+        
         symbols = ["BTC", "ETH", "SOL"]
         actions = ["BUY", "SELL"]
         
-        existing = db.execute(select(Trade).limit(1)).scalar_one_or_none()
-        if existing:
-            return {"status": "ok", "message": "Trades already exist", "count": db.query(Trade).count()}
+        # Очищаем существующие данные перед генерацией новых
+        if clear_existing:
+            trades_deleted = db.query(Trade).count()
+            positions_deleted = db.query(Position).count()
+            notifications_deleted = db.query(Notification).count()
+            
+            db.query(Trade).delete()
+            db.query(Position).delete()
+            db.query(Notification).delete()
+            
+            state = get_bot_state(db)
+            state.balance = 10000.0
+            state.realized_pnl = 0.0
+            state.unrealized_pnl = 0.0
+            db.commit()
+            
+            logger.info(f"Cleared {trades_deleted} trades, {positions_deleted} positions, {notifications_deleted} notifications")
         
         demo_trades = []
         base_time = datetime.datetime.now(datetime.timezone.utc)
