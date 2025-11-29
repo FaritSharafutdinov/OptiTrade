@@ -551,9 +551,9 @@ async def generate_demo_trades(
         
         # Базовая цена для каждого символа (примерные текущие рыночные цены)
         base_prices = {
-            "BTC": 82000.0,
-            "ETH": 3400.0,
-            "SOL": 140.0
+            "BTC": 82032.0,
+            "ETH": 3472.0,
+            "SOL": 143.0
         }
         
         for i in range(50):
@@ -587,10 +587,29 @@ async def generate_demo_trades(
         
         db.add_all(demo_trades)
         
+        # Создаем demo позиции с актуальными ценами
         demo_positions = [
-            Position(symbol="BTC", quantity=0.5, avg_price=62300.0, current_price=61625.0, updated_at=datetime.datetime.now(datetime.timezone.utc)),
-            Position(symbol="ETH", quantity=5.0, avg_price=3450.0, current_price=3400.0, updated_at=datetime.datetime.now(datetime.timezone.utc)),
-            Position(symbol="SOL", quantity=50.0, avg_price=138.0, current_price=115.0, updated_at=datetime.datetime.now(datetime.timezone.utc)),
+            Position(
+                symbol="BTC", 
+                quantity=0.5, 
+                avg_price=base_prices["BTC"] * 0.95,  # Куплено немного ниже текущей цены
+                current_price=base_prices["BTC"], 
+                updated_at=datetime.datetime.now(datetime.timezone.utc)
+            ),
+            Position(
+                symbol="ETH", 
+                quantity=5.0, 
+                avg_price=base_prices["ETH"] * 0.97, 
+                current_price=base_prices["ETH"], 
+                updated_at=datetime.datetime.now(datetime.timezone.utc)
+            ),
+            Position(
+                symbol="SOL", 
+                quantity=50.0, 
+                avg_price=base_prices["SOL"] * 0.92, 
+                current_price=base_prices["SOL"], 
+                updated_at=datetime.datetime.now(datetime.timezone.utc)
+            ),
         ]
         db.add_all(demo_positions)
         
@@ -881,19 +900,30 @@ async def get_market_analysis():
     """Get market analysis data - prices, volumes, signals"""
     db = SessionLocal()
     try:
+        # Актуальные базовые цены (должны совпадать с ценами при генерации demo)
+        base_prices = {
+            "BTC": 82032.0,
+            "ETH": 3481.0,
+            "SOL": 145.0
+        }
+        
         positions = db.query(Position).all()
         recent_trades = db.query(Trade).order_by(desc(Trade.timestamp)).limit(100).all()
         
         market_data = []
         symbols_seen = set()
         
+        # Сначала обрабатываем позиции
         for pos in positions:
             if pos.symbol not in symbols_seen:
                 symbol_trades = [t for t in recent_trades if t.symbol == pos.symbol]
+                # Используем актуальную цену из base_prices или позиции
+                current_price = base_prices.get(pos.symbol, float(pos.current_price))
+                
                 if symbol_trades:
                     prices_24h = [float(t.price) for t in symbol_trades[:10]]
                     if len(prices_24h) > 1:
-                        change_pct = ((float(pos.current_price) - prices_24h[-1]) / prices_24h[-1] * 100) if prices_24h[-1] > 0 else 0
+                        change_pct = ((current_price - prices_24h[-1]) / prices_24h[-1] * 100) if prices_24h[-1] > 0 else 0
                     else:
                         change_pct = 0
                 else:
@@ -904,35 +934,44 @@ async def get_market_analysis():
                 
                 market_data.append({
                     "symbol": pos.symbol,
-                    "price": float(pos.current_price),
+                    "price": current_price,
                     "change": round(change_pct, 2),
                     "volume": volume_str,
                     "trend": "up" if change_pct >= 0 else "down"
                 })
                 symbols_seen.add(pos.symbol)
         
-        popular_symbols = ["BTC", "ETH", "SOL", "AAPL", "TSLA", "NVDA"]
+        # Добавляем популярные символы (только криптовалюты)
+        popular_symbols = ["BTC", "ETH", "SOL"]
         for symbol in popular_symbols:
             if symbol not in symbols_seen:
                 symbol_trades = [t for t in recent_trades if t.symbol == symbol]
+                
+                # Используем актуальную базовую цену или последнюю из trades
                 if symbol_trades:
                     latest_trade = symbol_trades[0]
+                    current_price = float(latest_trade.price)
                     prices_24h = [float(t.price) for t in symbol_trades[:10]]
                     if len(prices_24h) > 1:
-                        change_pct = ((float(latest_trade.price) - prices_24h[-1]) / prices_24h[-1] * 100) if prices_24h[-1] > 0 else 0
+                        change_pct = ((current_price - prices_24h[-1]) / prices_24h[-1] * 100) if prices_24h[-1] > 0 else 0
                     else:
                         change_pct = 0
                     
                     volume_24h = sum(float(t.size) * float(t.price) for t in symbol_trades[:20])
                     volume_str = f"${volume_24h/1e9:.1f}B" if volume_24h >= 1e9 else f"${volume_24h/1e6:.1f}M"
-                    
-                    market_data.append({
-                        "symbol": symbol,
-                        "price": float(latest_trade.price),
-                        "change": round(change_pct, 2),
-                        "volume": volume_str,
-                        "trend": "up" if change_pct >= 0 else "down"
-                    })
+                else:
+                    # Если нет трейдов, используем базовую цену
+                    current_price = base_prices.get(symbol, 0)
+                    change_pct = 0.0
+                    volume_str = "$0.0M"
+                
+                market_data.append({
+                    "symbol": symbol,
+                    "price": current_price,
+                    "change": round(change_pct, 2),
+                    "volume": volume_str,
+                    "trend": "up" if change_pct >= 0 else "down"
+                })
         
         total_volume = sum(float(t.size) * float(t.price) for t in recent_trades[:100])
         market_cap_estimate = sum(float(pos.quantity) * float(pos.current_price) for pos in positions) * 100
