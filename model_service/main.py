@@ -530,5 +530,5 @@ async def reload_model(request: Dict[str, str]):
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv("PORT", 8001))
+    port = int(os.getenv("PORT", 9001))
     uvicorn.run(app, host="0.0.0.0", port=port)

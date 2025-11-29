@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 echo ========================================
-echo Killing processes on ports 8000, 8001, 5173
+echo Killing processes on ports 9000, 9001, 5175
 echo ========================================
 echo.
 
@@ -11,10 +11,10 @@ echo.
 REM Function to kill process on port
 set PORT_FOUND=0
 
-REM Kill processes on port 8000 (Backend)
-echo Checking port 8000...
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8000 ^| findstr LISTENING') do (
-    echo [INFO] Found process %%a on port 8000, killing...
+REM Kill processes on port 9000 (Backend)
+echo Checking port 9000...
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr :9000 ^| findstr LISTENING') do (
+    echo [INFO] Found process %%a on port 9000, killing...
     taskkill /F /PID %%a >nul 2>&1
     if errorlevel 1 (
         echo [WARN] Failed to kill process %%a, trying again...
@@ -25,10 +25,10 @@ for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8000 ^| findstr LISTENING') 
     )
 )
 
-REM Kill processes on port 8001 (Model Service)
-echo Checking port 8001...
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8001 ^| findstr LISTENING') do (
-    echo [INFO] Found process %%a on port 8001, killing...
+REM Kill processes on port 9001 (Model Service)
+echo Checking port 9001...
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr :9001 ^| findstr LISTENING') do (
+    echo [INFO] Found process %%a on port 9001, killing...
     taskkill /F /PID %%a >nul 2>&1
     if errorlevel 1 (
         echo [WARN] Failed to kill process %%a, trying again...
@@ -39,10 +39,10 @@ for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8001 ^| findstr LISTENING') 
     )
 )
 
-REM Kill processes on port 5173 (Frontend)
-echo Checking port 5173...
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr :5173 ^| findstr LISTENING') do (
-    echo [INFO] Found process %%a on port 5173, killing...
+REM Kill processes on port 5175 (Frontend)
+echo Checking port 5175...
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr :5175 ^| findstr LISTENING') do (
+    echo [INFO] Found process %%a on port 5175, killing...
     taskkill /F /PID %%a >nul 2>&1
     if errorlevel 1 (
         echo [WARN] Failed to kill process %%a, trying again...
@@ -67,35 +67,35 @@ echo.
 echo [INFO] Final check - checking if ports are free...
 
 REM Check if ports are still in use
-netstat -ano | findstr :8000 | findstr LISTENING >nul
+netstat -ano | findstr :9000 | findstr LISTENING >nul
 if errorlevel 1 (
-    echo [OK] Port 8000 is free
+    echo [OK] Port 9000 is free
 ) else (
-    echo [WARN] Port 8000 is still in use!
-    echo [INFO] Trying to kill all processes using port 8000...
-    for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8000 ^| findstr LISTENING') do (
+    echo [WARN] Port 9000 is still in use!
+    echo [INFO] Trying to kill all processes using port 9000...
+    for /f "tokens=5" %%a in ('netstat -ano ^| findstr :9000 ^| findstr LISTENING') do (
         taskkill /F /PID %%a /T >nul 2>&1
     )
 )
 
-netstat -ano | findstr :8001 | findstr LISTENING >nul
+netstat -ano | findstr :9001 | findstr LISTENING >nul
 if errorlevel 1 (
-    echo [OK] Port 8001 is free
+    echo [OK] Port 9001 is free
 ) else (
-    echo [WARN] Port 8001 is still in use!
-    echo [INFO] Trying to kill all processes using port 8001...
-    for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8001 ^| findstr LISTENING') do (
+    echo [WARN] Port 9001 is still in use!
+    echo [INFO] Trying to kill all processes using port 9001...
+    for /f "tokens=5" %%a in ('netstat -ano ^| findstr :9001 ^| findstr LISTENING') do (
         taskkill /F /PID %%a /T >nul 2>&1
     )
 )
 
-netstat -ano | findstr :5173 | findstr LISTENING >nul
+netstat -ano | findstr :5175 | findstr LISTENING >nul
 if errorlevel 1 (
-    echo [OK] Port 5173 is free
+    echo [OK] Port 5175 is free
 ) else (
-    echo [WARN] Port 5173 is still in use!
-    echo [INFO] Trying to kill all processes using port 5173...
-    for /f "tokens=5" %%a in ('netstat -ano ^| findstr :5173 ^| findstr LISTENING') do (
+    echo [WARN] Port 5175 is still in use!
+    echo [INFO] Trying to kill all processes using port 5175...
+    for /f "tokens=5" %%a in ('netstat -ano ^| findstr :5175 ^| findstr LISTENING') do (
         taskkill /F /PID %%a /T >nul 2>&1
     )
 )

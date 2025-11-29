@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 load_dotenv()
 
 API_KEY = os.getenv("ADMIN_API_KEY", "devkey")
-MODEL_SERVICE_URL = os.getenv("MODEL_SERVICE_URL", "http://127.0.0.1:8001")
+MODEL_SERVICE_URL = os.getenv("MODEL_SERVICE_URL", "http://127.0.0.1:9001")
 
 # Use SQLite by default for local development (no PostgreSQL required)
 # Set DATABASE_URL env var to use PostgreSQL if needed
